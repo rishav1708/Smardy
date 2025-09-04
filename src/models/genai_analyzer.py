@@ -37,10 +37,19 @@ class GenAIDocumentAnalyzer:
         
         # Initialize OpenAI if API key is available
         if self.use_openai and self.openai_api_key:
-            openai.api_key = self.openai_api_key
-            self.openai_available = True
+            try:
+                # Use the new OpenAI client
+                from openai import OpenAI
+                self.openai_client = OpenAI(api_key=self.openai_api_key)
+                self.openai_available = True
+                logger.info("OpenAI client initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+                self.openai_available = False
+                self.openai_client = None
         else:
             self.openai_available = False
+            self.openai_client = None
             logger.warning("OpenAI API key not found. Using local models only.")
         
         # Initialize local models
@@ -92,6 +101,9 @@ class GenAIDocumentAnalyzer:
     
     def _summarize_with_openai(self, text: str, max_length: int) -> Dict:
         """Generate summary using OpenAI GPT"""
+        if not self.openai_client:
+            raise ValueError("OpenAI client not available")
+            
         try:
             # Truncate text if too long (GPT-3.5 has token limits)
             max_tokens = 3000  # Leave room for prompt and response
@@ -99,7 +111,7 @@ class GenAIDocumentAnalyzer:
             if len(words) > max_tokens:
                 text = ' '.join(words[:max_tokens])
             
-            response = openai.ChatCompletion.create(
+            response = self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {
@@ -108,7 +120,7 @@ class GenAIDocumentAnalyzer:
                     },
                     {
                         "role": "user", 
-                        "content": f"Please summarize the following text in approximately {max_length} words, focusing on the main points and key insights:\\n\\n{text}"
+                        "content": f"Please summarize the following text in approximately {max_length} words, focusing on the main points and key insights:\n\n{text}"
                     }
                 ],
                 max_tokens=max_length * 2,  # Allow some buffer
@@ -231,6 +243,9 @@ class GenAIDocumentAnalyzer:
     
     def _qa_with_openai(self, text: str, question: str) -> Dict:
         """Answer question using OpenAI"""
+        if not self.openai_client:
+            raise ValueError("OpenAI client not available")
+            
         try:
             # Truncate text if too long
             max_tokens = 2500
@@ -238,7 +253,7 @@ class GenAIDocumentAnalyzer:
             if len(words) > max_tokens:
                 text = ' '.join(words[:max_tokens])
             
-            response = openai.ChatCompletion.create(
+            response = self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {
@@ -247,7 +262,7 @@ class GenAIDocumentAnalyzer:
                     },
                     {
                         "role": "user",
-                        "content": f"Based on the following document, please answer this question: {question}\\n\\nDocument:\\n{text}"
+                        "content": f"Based on the following document, please answer this question: {question}\n\nDocument:\n{text}"
                     }
                 ],
                 max_tokens=200,
@@ -267,30 +282,87 @@ class GenAIDocumentAnalyzer:
             raise e
     
     def _qa_with_local_model(self, text: str, question: str) -> Dict:
-        """Answer question using local model"""
-        if not self.qa_model:
-            raise ValueError("Local QA model not available")
+        """Answer question using local model or simple text search"""
+        if self.qa_model:
+            try:
+                # Truncate text if too long
+                max_length = 512  # DistilBERT limit
+                words = text.split()
+                if len(words) > max_length:
+                    text = ' '.join(words[:max_length])
+                
+                result = self.qa_model(question=question, context=text)
+                
+                return {
+                    'answer': result['answer'],
+                    'confidence': round(result['score'], 3),
+                    'method': 'local_distilbert',
+                    'start_position': result.get('start', -1),
+                    'end_position': result.get('end', -1)
+                }
+                
+            except Exception as e:
+                logger.error(f"Local QA error: {str(e)}")
+                # Fall through to simple search
         
+        # Simple keyword-based answer extraction as fallback
+        return self._simple_qa_fallback(text, question)
+    
+    def _simple_qa_fallback(self, text: str, question: str) -> Dict:
+        """Simple keyword-based Q&A fallback"""
         try:
-            # Truncate text if too long
-            max_length = 512  # DistilBERT limit
-            words = text.split()
-            if len(words) > max_length:
-                text = ' '.join(words[:max_length])
+            question_lower = question.lower()
+            text_lower = text.lower()
+            sentences = text.split('. ')
             
-            result = self.qa_model(question=question, context=text)
+            # Extract key question words
+            question_words = [word for word in question_lower.split() 
+                            if word not in ['what', 'where', 'when', 'who', 'how', 'why', 'is', 'are', 'the', 'a', 'an']]
             
-            return {
-                'answer': result['answer'],
-                'confidence': round(result['score'], 3),
-                'method': 'local_distilbert',
-                'start_position': result.get('start', -1),
-                'end_position': result.get('end', -1)
-            }
+            # Find sentences containing question keywords
+            relevant_sentences = []
+            for sentence in sentences:
+                sentence_lower = sentence.lower()
+                score = sum(1 for word in question_words if word in sentence_lower)
+                if score > 0:
+                    relevant_sentences.append((score, sentence.strip()))
             
+            if relevant_sentences:
+                # Sort by relevance and take the best match
+                relevant_sentences.sort(key=lambda x: x[0], reverse=True)
+                best_sentence = relevant_sentences[0][1]
+                
+                # If the sentence is too long, try to extract the most relevant part
+                if len(best_sentence.split()) > 30:
+                    words = best_sentence.split()
+                    for word in question_words:
+                        if word in best_sentence.lower():
+                            word_idx = best_sentence.lower().find(word)
+                            start_idx = max(0, word_idx - 50)
+                            end_idx = min(len(best_sentence), word_idx + 100)
+                            best_sentence = best_sentence[start_idx:end_idx].strip()
+                            break
+                
+                return {
+                    'answer': best_sentence,
+                    'confidence': min(0.7, relevant_sentences[0][0] * 0.2),
+                    'method': 'simple_keyword_search'
+                }
+            else:
+                return {
+                    'answer': "I couldn't find specific information to answer that question in the document.",
+                    'confidence': 0.0,
+                    'method': 'simple_keyword_search'
+                }
+                
         except Exception as e:
-            logger.error(f"Local QA error: {str(e)}")
-            raise e
+            logger.error(f"Simple QA fallback error: {str(e)}")
+            return {
+                'answer': "I'm unable to process that question at the moment.",
+                'confidence': 0.0,
+                'method': 'error',
+                'error': str(e)
+            }
     
     def generate_insights(self, text: str) -> Dict:
         """
@@ -309,7 +381,7 @@ class GenAIDocumentAnalyzer:
             if len(words) > max_tokens:
                 text = ' '.join(words[:max_tokens])
             
-            response = openai.ChatCompletion.create(
+            response = self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {
@@ -318,7 +390,7 @@ class GenAIDocumentAnalyzer:
                     },
                     {
                         "role": "user",
-                        "content": f"Please analyze the following document and provide key insights, themes, and observations:\\n\\n{text}"
+                        "content": f"Please analyze the following document and provide key insights, themes, and observations:\n\n{text}"
                     }
                 ],
                 max_tokens=300,
@@ -328,7 +400,7 @@ class GenAIDocumentAnalyzer:
             insights_text = response.choices[0].message.content.strip()
             
             # Split insights into list
-            insights = [insight.strip() for insight in insights_text.split('\\n') if insight.strip()]
+            insights = [insight.strip() for insight in insights_text.split('\n') if insight.strip()]
             
             return {
                 'insights': insights,
@@ -390,7 +462,7 @@ class GenAIDocumentAnalyzer:
             return {'keywords': [], 'error': 'OpenAI API not available'}
         
         try:
-            response = openai.ChatCompletion.create(
+            response = self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {
@@ -431,10 +503,10 @@ class GenAIDocumentAnalyzer:
             }
         }
         
-        if self.openai_available:
+        if self.openai_available and self.openai_client:
             try:
                 # Test OpenAI connection with a minimal request
-                openai.ChatCompletion.create(
+                self.openai_client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": "Hi"}],
                     max_tokens=1

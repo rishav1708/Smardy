@@ -48,7 +48,7 @@ def safe_nltk_download(resource):
             nltk.download(resource.split('/')[-1], quiet=True)
             return True
         except Exception as e:
-            logger.warning(f"Could not download NLTK resource {resource}: {str(e)}")
+            print(f"Could not download NLTK resource {resource}: {str(e)}")
             return False
 
 # Try to download required NLTK data

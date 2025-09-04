@@ -169,13 +169,13 @@ def main():
             upload_and_analyze_tab(doc_processor, ml_analyzer, genai_analyzer)
         
         with tab2:
-            st.info("Analysis dashboard will be available after uploading and analyzing a document.")
+            analysis_dashboard_tab()
         
         with tab3:
-            st.info("Q&A assistant will be available after uploading and analyzing a document.")
+            qa_assistant_tab(genai_analyzer)
         
         with tab4:
-            st.info("Document library will show previously analyzed documents.")
+            document_library_tab()
     
     # Footer
     st.markdown("""
@@ -252,6 +252,13 @@ def upload_and_analyze_tab(doc_processor, ml_analyzer, genai_analyzer):
                         avg_word_length = sum(len(word) for word in text.split()) / word_count if word_count > 0 else 0
                         st.metric("Avg Word Length", f"{avg_word_length:.1f}")
                     
+                    # Store the document for Q&A
+                    st.session_state.current_analysis = {
+                        'text': text,
+                        'filename': uploaded_file.name,
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    
                     # Show text preview
                     st.markdown("### Document Preview")
                     st.text_area("Content:", text[:2000] + "..." if len(text) > 2000 else text, height=300)
@@ -263,6 +270,128 @@ def upload_and_analyze_tab(doc_processor, ml_analyzer, genai_analyzer):
             except Exception as e:
                 st.error(f"❌ Error processing document: {str(e)}")
                 st.code(traceback.format_exc())
+
+def analysis_dashboard_tab():
+    """Analysis dashboard tab"""
+    if 'current_analysis' in st.session_state and st.session_state.current_analysis:
+        analysis = st.session_state.current_analysis
+        st.markdown(f"### Analysis for: {analysis['filename']}")
+        st.markdown(f"**Analyzed at:** {analysis['timestamp']}")
+        
+        # Show basic text statistics
+        text = analysis['text']
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Characters", len(text))
+        with col2:
+            word_count = len(text.split())
+            st.metric("Words", word_count)
+        with col3:
+            sentence_count = len(text.split('.'))
+            st.metric("Sentences", sentence_count)
+        with col4:
+            avg_word_length = sum(len(word) for word in text.split()) / word_count if word_count > 0 else 0
+            st.metric("Avg Word Length", f"{avg_word_length:.1f}")
+        
+        # Show document preview
+        st.markdown("### Document Preview")
+        st.text_area("Content:", text[:1500] + "..." if len(text) > 1500 else text, height=200)
+        
+    else:
+        st.info("📄 Please upload and analyze a document first to see the analysis dashboard.")
+
+def qa_assistant_tab(genai_analyzer):
+    """Q&A Assistant tab"""
+    if not ('current_analysis' in st.session_state and st.session_state.current_analysis):
+        st.info("📄 Please upload and analyze a document first to use the Q&A assistant.")
+        return
+    
+    analysis = st.session_state.current_analysis
+    st.markdown(f"### Q&A for: {analysis['filename']}")
+    
+    # Check API status
+    if genai_analyzer:
+        try:
+            status = genai_analyzer.check_api_status()
+            if status.get('openai_available', False):
+                st.success("🧠 OpenAI API is available - Enhanced Q&A enabled")
+            else:
+                st.warning("⚠️ OpenAI API not available - Using basic keyword search")
+        except:
+            st.warning("⚠️ Using basic keyword search")
+    
+    # Question input
+    question = st.text_input(
+        "Ask a question about your document:",
+        placeholder="e.g., What are the main topics discussed?",
+        help="Ask any question about the content of your document"
+    )
+    
+    # Answer method selection
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        method = st.selectbox(
+            "Answer Method:",
+            ["auto", "openai", "local"],
+            help="auto = use best available method"
+        )
+    
+    if question and st.button("🤔 Get Answer", type="primary"):
+        with st.spinner("Thinking..."):
+            try:
+                if genai_analyzer:
+                    result = genai_analyzer.answer_question(analysis['text'], question, method)
+                    
+                    # Display answer
+                    st.markdown("### 💡 Answer")
+                    st.write(result['answer'])
+                    
+                    # Show metadata
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Confidence", f"{result.get('confidence', 0):.2f}")
+                    with col2:
+                        st.metric("Method", result.get('method', 'unknown'))
+                    
+                    if 'error' in result:
+                        st.error(f"Note: {result['error']}")
+                else:
+                    st.error("Q&A analyzer not available")
+                    
+            except Exception as e:
+                st.error(f"Error answering question: {str(e)}")
+    
+    # Suggested questions
+    st.markdown("### 🤔 Suggested Questions")
+    suggested = [
+        "What are the main topics discussed?",
+        "What is the purpose of this document?",
+        "What are the key findings or conclusions?",
+        "Who are the main people or organizations mentioned?",
+        "What are the most important points?"
+    ]
+    
+    for suggestion in suggested:
+        if st.button(suggestion, key=f"suggest_{hash(suggestion)}"):
+            st.experimental_rerun()
+
+def document_library_tab():
+    """Document library tab"""
+    st.markdown("### 📚 Document Library")
+    
+    if 'analyzed_documents' in st.session_state and st.session_state.analyzed_documents:
+        st.write(f"You have analyzed {len(st.session_state.analyzed_documents)} documents:")
+        
+        for i, doc in enumerate(st.session_state.analyzed_documents):
+            with st.expander(f"📄 {doc.get('filename', 'Unnamed Document')} - {doc.get('timestamp', 'Unknown time')}"):
+                st.write(f"**Type:** {doc.get('type', 'Unknown')}")
+                st.write(f"**Size:** {doc.get('size', 'Unknown')} characters")
+                if st.button(f"Load Document {i+1}", key=f"load_{i}"):
+                    st.session_state.current_analysis = doc
+                    st.success("Document loaded! Switch to other tabs to analyze.")
+    else:
+        st.info("No documents analyzed yet. Upload and analyze documents to see them here.")
 
 if __name__ == "__main__":
     main()
