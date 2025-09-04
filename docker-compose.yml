@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  smart-document-analyzer:
+    build: .
+    container_name: smart-document-analyzer
+    ports:
+      - "8501:8501"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HUGGING_FACE_API_KEY=${HUGGING_FACE_API_KEY}
+      - APP_NAME=Smart Document Analyzer
+      - DEBUG=false
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+
+  # Optional: Add a reverse proxy (nginx) for production
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: nginx-proxy
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf
+  #     - ./ssl:/etc/ssl
+  #   depends_on:
+  #     - smart-document-analyzer
+  #   restart: unless-stopped
+  #   networks:
+  #     - app-network
+
+  # Optional: Add Redis for caching
+  # redis:
+  #   image: redis:alpine
+  #   container_name: redis-cache
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  redis_data:
