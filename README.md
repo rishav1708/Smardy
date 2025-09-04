@@ -375,12 +375,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Contact & Support
 
 **Developer**: Rishav Kant  
-**Email**: rishavkant@example.com  
-**LinkedIn**: [linkedin.com/in/rishavkant](https://linkedin.com/in/rishavkant)  
-**GitHub**: [github.com/rishavkant](https://github.com/rishavkant)  
+**Email**: rishavkant17@example.com  
+**LinkedIn**: [linkedin.com/in/rishavkant](www.linkedin.com/in/rishav-kant-a09bb7307)  
+**GitHub**: [github.com/rishavkant](https://github.com/rishav1708)  
 
 ### Support
-- **Issues**: Report bugs and request features via [GitHub Issues](https://github.com/rishavkant/smart-document-analyzer/issues)
+- **Issues**: Report bugs and request features via [GitHub Issues](https://github.com/rishav1708/smart-document-analyzer/issues)
 - **Discussions**: Join the community discussion
 - **Documentation**: Comprehensive docs available in the `/docs` folder
 
