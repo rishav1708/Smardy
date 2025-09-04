@@ -8,9 +8,9 @@ import json
 import logging
 from typing import Dict, List, Optional, Union
 import openai
-from transformers import pipeline, AutoTokenizer, AutoModel
-import torch
-from sentence_transformers import SentenceTransformer
+# from transformers import pipeline, AutoTokenizer, AutoModel  # Local model loading disabled for Python 3.13
+# import torch
+# from sentence_transformers import SentenceTransformer  # Not available in Python 3.13
 import numpy as np
 from dotenv import load_dotenv
 
@@ -47,31 +47,12 @@ class GenAIDocumentAnalyzer:
         self._init_local_models()
     
     def _init_local_models(self):
-        """Initialize local transformer models"""
-        try:
-            # Summarization model
-            self.summarizer = pipeline(
-                "summarization",
-                model="facebook/bart-large-cnn",
-                tokenizer="facebook/bart-large-cnn"
-            )
-            
-            # Question answering model
-            self.qa_model = pipeline(
-                "question-answering",
-                model="distilbert-base-cased-distilled-squad"
-            )
-            
-            # Sentence transformer for embeddings
-            self.sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
-            
-            logger.info("Local models initialized successfully")
-            
-        except Exception as e:
-            logger.error(f"Error initializing local models: {str(e)}")
-            self.summarizer = None
-            self.qa_model = None
-            self.sentence_model = None
+        """Initialize local transformer models (disabled for Python 3.13 compatibility)"""
+        # All local transformer models disabled for Python 3.13 compatibility
+        self.summarizer = None
+        self.qa_model = None
+        self.sentence_model = None
+        logger.info("Local models disabled for Python 3.13 compatibility")
     
     def generate_summary(self, text: str, method: str = "auto", 
                         max_length: int = 150, min_length: int = 50) -> Dict:

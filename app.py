@@ -350,7 +350,7 @@ def analysis_dashboard_tab():
         keywords_df = pd.DataFrame(results['keywords'], columns=['Keyword', 'Score'])
         keywords_df = keywords_df.head(15)
         
-        fig_keywords = px.horizontal_bar(
+        fig_keywords = px.bar(
             keywords_df,
             x='Score',
             y='Keyword',
