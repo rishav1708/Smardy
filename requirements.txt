@@ -1,34 +1,31 @@
 # Core ML/Data Science Libraries
-pandas==2.0.3
-numpy==1.24.3
-scikit-learn==1.3.0
-matplotlib==3.7.2
-seaborn==0.12.2
-plotly==5.15.0
+pandas
+numpy
+scikit-learn
+plotly
 
 # NLP and Text Processing
-nltk==3.8.1
-textblob==0.17.1
-wordcloud==1.9.2
+nltk
+textblob
+wordcloud
 
 # Document Processing
-PyPDF2==3.0.1
-python-docx==0.8.11
-openpyxl==3.1.2
+PyPDF2
+python-docx
+openpyxl
 
 # GenAI and LLM Integration
-openai==1.3.5
-transformers==4.21.0
+openai
+transformers
 
 # Web Framework and UI
-streamlit==1.25.0
-streamlit-extras==0.3.0
-streamlit-option-menu==0.3.6
+streamlit
+streamlit-option-menu
 
 # Utilities and Environment
-python-dotenv==1.0.0
-requests==2.31.0
-Pillow==10.0.0
-tqdm==4.66.1
+python-dotenv
+requests
+Pillow
+tqdm
 # Deployment
 gunicorn>=22.0.0
