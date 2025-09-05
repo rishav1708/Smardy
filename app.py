@@ -22,6 +22,12 @@ import os
 # Add src directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
+# Setup NLTK data on startup
+try:
+    exec(open('setup_nltk.py').read())
+except Exception as e:
+    print(f"NLTK setup warning: {e}")
+
 from utils.document_processor import DocumentProcessor
 from models.ml_analyzer import MLDocumentAnalyzer
 from models.genai_analyzer import GenAIDocumentAnalyzer
