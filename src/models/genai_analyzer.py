@@ -6,11 +6,23 @@ Integrates with LLM APIs for advanced document analysis, summarization, and Q&A
 import os
 import json
 import logging
-import requests
 from typing import Dict, List, Optional, Union
 import re
 from collections import Counter
-from dotenv import load_dotenv
+
+try:
+    import requests
+except ImportError:
+    print("Warning: requests not available")
+    requests = None
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("Warning: python-dotenv not available")
+    def load_dotenv():
+        pass
 
 # Load environment variables
 load_dotenv()
@@ -48,6 +60,9 @@ class GenAIDocumentAnalyzer:
         """
         Query Hugging Face Inference API with retries
         """
+        if requests is None:
+            return {"error": "Requests library not available"}
+            
         headers = {}
         if self.hf_api_key:
             headers["Authorization"] = f"Bearer {self.hf_api_key}"
@@ -259,28 +274,32 @@ class GenAIDocumentAnalyzer:
         """
         Answer questions about the document with robust fallback handling
         """
-        if method == "auto":
-            # Try Hugging Face first, then local models, then simple search
-            method = "huggingface" if self.huggingface_available else "local"
+        logger.info(f"Q&A request with method: {method}")
         
+        # Always try Hugging Face first, then fallback to simple search
         try:
-            if method == "huggingface" and self.huggingface_available:
+            if method == "auto" or method == "huggingface":
+                logger.info("Attempting Hugging Face Q&A...")
                 return self._qa_with_huggingface(text, question)
+            elif method == "local":
+                logger.info("Using local/simple search method...")
+                return self._qa_with_simple_search(text, question)
             else:
-                return self._qa_with_local_model(text, question)
+                # Default to simple search
+                return self._qa_with_simple_search(text, question)
                 
         except Exception as e:
-            logger.error(f"Question answering error: {str(e)}")
-            # If everything fails, try simple search as last resort
+            logger.error(f"Primary Q&A method failed: {str(e)}")
+            # Always fall back to simple search
             try:
+                logger.info("Falling back to simple search...")
                 return self._qa_with_simple_search(text, question)
             except Exception as e2:
                 logger.error(f"All Q&A methods failed: {str(e2)}")
                 return {
                     'answer': "I'm having trouble analyzing your question. Please try asking about specific topics mentioned in the document.",
-                    'confidence': 0.0,
-                    'method': 'error_fallback',
-                    'error': str(e)
+                    'confidence': 0.1,
+                    'method': 'error_fallback'
                 }
     
     def _qa_with_huggingface(self, text: str, question: str) -> Dict:
@@ -336,31 +355,10 @@ class GenAIDocumentAnalyzer:
             raise e
     
     def _qa_with_local_model(self, text: str, question: str) -> Dict:
-        """Answer question using local model with fallback"""
-        if self.qa_model:
-            try:
-                # Truncate text if too long
-                max_length = 512  # DistilBERT limit
-                words = text.split()
-                if len(words) > max_length:
-                    text = ' '.join(words[:max_length])
-                
-                result = self.qa_model(question=question, context=text)
-                
-                return {
-                    'answer': result['answer'],
-                    'confidence': round(result['score'], 3),
-                    'method': 'local_distilbert',
-                    'start_position': result.get('start', -1),
-                    'end_position': result.get('end', -1)
-                }
-                
-            except Exception as e:
-                logger.error(f"Local QA model error: {str(e)}")
-                return self._qa_with_simple_search(text, question)
-        else:
-            # Use simple fallback when no model is available
-            return self._qa_with_simple_search(text, question)
+        """Answer question using local fallback (simple search)"""
+        # Since we removed local transformer models, always use simple search
+        logger.info("Using simple search method for Q&A")
+        return self._qa_with_simple_search(text, question)
     
     def _qa_with_simple_search(self, text: str, question: str) -> Dict:
         """
