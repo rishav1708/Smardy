@@ -47,31 +47,62 @@ class GenAIDocumentAnalyzer:
         self._init_local_models()
     
     def _init_local_models(self):
-        """Initialize local transformer models"""
+        """Initialize local transformer models with graceful fallbacks"""
+        # Initialize models as None first
+        self.summarizer = None
+        self.qa_model = None
+        self.sentence_model = None
+        
         try:
-            # Summarization model
+            # Try to initialize summarization model
+            logger.info("Attempting to load summarization model...")
             self.summarizer = pipeline(
                 "summarization",
                 model="facebook/bart-large-cnn",
                 tokenizer="facebook/bart-large-cnn"
             )
-            
-            # Question answering model
+            logger.info("✅ Summarization model loaded successfully")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load summarization model: {str(e)}")
+            self.summarizer = None
+        
+        try:
+            # Try to initialize Q&A model with a lighter alternative first
+            logger.info("Attempting to load Q&A model...")
+            # Use a smaller, faster model for Streamlit Cloud
             self.qa_model = pipeline(
                 "question-answering",
-                model="distilbert-base-cased-distilled-squad"
+                model="distilbert-base-uncased-distilled-squad"
             )
-            
-            # Sentence transformer for embeddings
-            self.sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
-            
-            logger.info("Local models initialized successfully")
-            
+            logger.info("✅ Q&A model loaded successfully")
         except Exception as e:
-            logger.error(f"Error initializing local models: {str(e)}")
-            self.summarizer = None
-            self.qa_model = None
+            logger.warning(f"⚠️ Failed to load Q&A model: {str(e)}")
+            try:
+                # Try an even lighter model
+                logger.info("Trying lighter Q&A model...")
+                self.qa_model = pipeline(
+                    "question-answering",
+                    model="deepset/minilm-uncased-squad2"
+                )
+                logger.info("✅ Light Q&A model loaded successfully")
+            except Exception as e2:
+                logger.error(f"❌ All Q&A models failed to load: {str(e2)}")
+                self.qa_model = None
+        
+        try:
+            # Try to initialize sentence transformer
+            logger.info("Attempting to load sentence transformer...")
+            self.sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
+            logger.info("✅ Sentence transformer loaded successfully")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load sentence transformer: {str(e)}")
             self.sentence_model = None
+        
+        # Log final status
+        models_loaded = sum([self.summarizer is not None, 
+                           self.qa_model is not None, 
+                           self.sentence_model is not None])
+        logger.info(f"Local model initialization complete: {models_loaded}/3 models loaded successfully")
     
     def generate_summary(self, text: str, method: str = "auto", 
                         max_length: int = 150, min_length: int = 50) -> Dict:
@@ -148,9 +179,16 @@ class GenAIDocumentAnalyzer:
             raise e
     
     def _summarize_with_local_model(self, text: str, max_length: int, min_length: int) -> Dict:
-        """Generate summary using local BART model"""
+        """Generate summary using local BART model with fallback"""
         if not self.summarizer:
-            raise ValueError("Local summarization model not available")
+            # Use extractive summary as fallback
+            logger.info("Using extractive summary fallback")
+            return {
+                'summary': self._extractive_summary(text, 3),
+                'method': 'extractive_fallback',
+                'word_count': len(self._extractive_summary(text, 3).split()),
+                'compression_ratio': round(len(text.split()) / len(self._extractive_summary(text, 3).split()), 2)
+            }
         
         try:
             # Split text into chunks if too long
@@ -286,30 +324,98 @@ class GenAIDocumentAnalyzer:
             raise e
     
     def _qa_with_local_model(self, text: str, question: str) -> Dict:
-        """Answer question using local model"""
-        if not self.qa_model:
-            raise ValueError("Local QA model not available")
-        
+        """Answer question using local model with fallback"""
+        if self.qa_model:
+            try:
+                # Truncate text if too long
+                max_length = 512  # DistilBERT limit
+                words = text.split()
+                if len(words) > max_length:
+                    text = ' '.join(words[:max_length])
+                
+                result = self.qa_model(question=question, context=text)
+                
+                return {
+                    'answer': result['answer'],
+                    'confidence': round(result['score'], 3),
+                    'method': 'local_distilbert',
+                    'start_position': result.get('start', -1),
+                    'end_position': result.get('end', -1)
+                }
+                
+            except Exception as e:
+                logger.error(f"Local QA model error: {str(e)}")
+                return self._qa_with_simple_search(text, question)
+        else:
+            # Use simple fallback when no model is available
+            return self._qa_with_simple_search(text, question)
+    
+    def _qa_with_simple_search(self, text: str, question: str) -> Dict:
+        """
+        Simple keyword-based search fallback for Q&A when models are unavailable
+        """
         try:
-            # Truncate text if too long
-            max_length = 512  # DistilBERT limit
-            words = text.split()
-            if len(words) > max_length:
-                text = ' '.join(words[:max_length])
+            import re
+            from collections import Counter
             
-            result = self.qa_model(question=question, context=text)
+            # Extract key terms from the question
+            question_words = re.findall(r'\b\w{3,}\b', question.lower())
+            # Remove common question words
+            stop_words = {'what', 'when', 'where', 'who', 'why', 'how', 'which', 'the', 'and', 'are', 'for', 'with', 'this', 'that'}
+            key_terms = [word for word in question_words if word not in stop_words]
             
-            return {
-                'answer': result['answer'],
-                'confidence': round(result['score'], 3),
-                'method': 'local_distilbert',
-                'start_position': result.get('start', -1),
-                'end_position': result.get('end', -1)
-            }
+            if not key_terms:
+                return {
+                    'answer': "I need more specific keywords in your question to search the document.",
+                    'confidence': 0.1,
+                    'method': 'simple_search_fallback'
+                }
             
+            # Split text into sentences
+            sentences = re.split(r'[.!?]+', text)
+            sentence_scores = []
+            
+            for sentence in sentences:
+                if len(sentence.strip()) < 10:  # Skip very short sentences
+                    continue
+                    
+                sentence_lower = sentence.lower()
+                score = 0
+                
+                # Score based on keyword matches
+                for term in key_terms:
+                    if term in sentence_lower:
+                        score += sentence_lower.count(term)
+                
+                if score > 0:
+                    sentence_scores.append((score, sentence.strip()))
+            
+            if sentence_scores:
+                # Sort by score and return the best match
+                sentence_scores.sort(key=lambda x: x[0], reverse=True)
+                best_sentence = sentence_scores[0][1]
+                confidence = min(sentence_scores[0][0] / len(key_terms) / 2, 0.8)  # Normalize confidence
+                
+                return {
+                    'answer': best_sentence,
+                    'confidence': round(confidence, 3),
+                    'method': 'simple_search_fallback'
+                }
+            else:
+                return {
+                    'answer': "I couldn't find relevant information in the document to answer your question. Try asking about specific topics mentioned in the document.",
+                    'confidence': 0.0,
+                    'method': 'simple_search_fallback'
+                }
+                
         except Exception as e:
-            logger.error(f"Local QA error: {str(e)}")
-            raise e
+            logger.error(f"Simple search fallback error: {str(e)}")
+            return {
+                'answer': "I'm unable to process your question at the moment. Please try rephrasing it.",
+                'confidence': 0.0,
+                'method': 'fallback_error',
+                'error': str(e)
+            }
     
     def generate_insights(self, text: str) -> Dict:
         """
