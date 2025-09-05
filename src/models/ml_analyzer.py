@@ -27,7 +27,12 @@ from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.chunk import ne_chunk
 from nltk.tag import pos_tag
 from textblob import TextBlob
-# from wordcloud import WordCloud  # Removed due to Python 3.13 compatibility
+try:
+    from wordcloud import WordCloud
+    WORDCLOUD_AVAILABLE = True
+except ImportError:
+    WORDCLOUD_AVAILABLE = False
+    print("WordCloud not available")
 
 # Download required NLTK data with SSL bypass
 import ssl

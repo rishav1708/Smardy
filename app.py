@@ -228,13 +228,20 @@ def upload_and_analyze_tab(doc_processor, ml_analyzer, genai_analyzer):
     if uploaded_file and st.button("🚀 Analyze Document", type="primary"):
         with st.spinner("Processing document..."):
             try:
-                # Extract text
+                # Extract text using document processor
                 file_content = uploaded_file.getvalue()
                 
-                # Basic text extraction
-                if uploaded_file.type == "text/plain":
-                    text = file_content.decode("utf-8")
-                    st.success("✅ Text extracted successfully!")
+                try:
+                    extraction_result = doc_processor.extract_text(uploaded_file.name, file_content)
+                    
+                    if not extraction_result['text']:
+                        st.error("❌ Could not extract text from the document")
+                        return
+                    
+                    text = extraction_result['text']
+                    metadata = extraction_result['metadata']
+                    
+                    st.success(f"✅ Text extracted successfully from {uploaded_file.type}!")
                     
                     # Display basic statistics
                     st.markdown("### Document Statistics")
@@ -256,16 +263,128 @@ def upload_and_analyze_tab(doc_processor, ml_analyzer, genai_analyzer):
                     st.session_state.current_analysis = {
                         'text': text,
                         'filename': uploaded_file.name,
-                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'metadata': metadata
                     }
                     
-                    # Show text preview
-                    st.markdown("### Document Preview")
-                    st.text_area("Content:", text[:2000] + "..." if len(text) > 2000 else text, height=300)
+                    # Perform ML Analysis
+                    if run_ml_analysis and ml_analyzer:
+                        with st.spinner("Running ML analysis..."):
+                            try:
+                                st.markdown("### 🤖 ML Analysis Results")
+                                
+                                # Sentiment analysis
+                                if include_sentiment:
+                                    sentiment_result = ml_analyzer.analyze_sentiment(text)
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        st.metric("Sentiment", sentiment_result['sentiment'])
+                                    with col2:
+                                        st.metric("Polarity", f"{sentiment_result['polarity']:.2f}")
+                                    with col3:
+                                        st.metric("Subjectivity", f"{sentiment_result['subjectivity']:.2f}")
+                                
+                                # Document classification
+                                doc_type = ml_analyzer.classify_document_type(text)
+                                st.markdown(f"**📄 Document Type:** {doc_type['document_type']} (Confidence: {doc_type['confidence']:.1f}%)")
+                                
+                                # Keywords
+                                keywords = ml_analyzer.extract_keywords(text, 10)
+                                if keywords:
+                                    st.markdown("**🔑 Key Terms:**")
+                                    keyword_text = ", ".join([f"{kw[0]} ({kw[1]:.3f})" for kw in keywords[:8]])
+                                    st.write(keyword_text)
+                                
+                                # Named entities
+                                if extract_entities:
+                                    entities = ml_analyzer.extract_named_entities(text)
+                                    if any(entities.values()):
+                                        st.markdown("**👤 Named Entities:**")
+                                        for entity_type, entity_list in entities.items():
+                                            if entity_list:
+                                                st.write(f"**{entity_type}:** {', '.join(entity_list[:5])}")
+                                
+                                # Word cloud data
+                                if generate_wordcloud:
+                                    wc_data = ml_analyzer.generate_word_cloud_data(text)
+                                    if wc_data.get('word_frequencies'):
+                                        st.markdown("**☁️ Most Frequent Words:**")
+                                        top_words = list(wc_data['word_frequencies'].items())[:10]
+                                        word_text = ", ".join([f"{word} ({count})" for word, count in top_words])
+                                        st.write(word_text)
+                                        
+                            except Exception as e:
+                                st.error(f"ML Analysis error: {str(e)}")
                     
-                else:
-                    st.info("Advanced document processing requires additional modules to be properly installed.")
-                    st.info("Currently showing basic file information only.")
+                    # Perform GenAI Analysis
+                    if run_genai_analysis and genai_analyzer and genai_analyzer.openai_available:
+                        with st.spinner("Running GenAI analysis..."):
+                            try:
+                                st.markdown("### 🧠 GenAI Analysis Results")
+                                
+                                # Summarization
+                                if include_summarization:
+                                    summary_result = genai_analyzer.generate_summary(text, "auto", 150, 50)
+                                    if 'summary' in summary_result:
+                                        st.markdown("**📝 Summary:**")
+                                        st.write(summary_result['summary'])
+                                        st.caption(f"Method: {summary_result.get('method', 'unknown')}")
+                                
+                                # AI Insights
+                                insights_result = genai_analyzer.generate_insights(text)
+                                if insights_result.get('insights'):
+                                    st.markdown("**💡 AI Insights:**")
+                                    for insight in insights_result['insights'][:3]:
+                                        st.write(f"• {insight}")
+                                        
+                            except Exception as e:
+                                st.error(f"GenAI Analysis error: {str(e)}")
+                    
+                    # Show text preview
+                    st.markdown("### 📄 Document Preview")
+                    preview_length = 2000
+                    preview_text = text[:preview_length] + "..." if len(text) > preview_length else text
+                    st.text_area("Content:", preview_text, height=300)
+                    
+                except Exception as e:
+                    # Fallback to basic text extraction for unsupported files
+                    if uploaded_file.type == "text/plain":
+                        try:
+                            text = file_content.decode("utf-8")
+                            st.success("✅ Text extracted successfully!")
+                            
+                            # Basic statistics
+                            st.markdown("### Document Statistics")
+                            col1, col2, col3, col4 = st.columns(4)
+                            
+                            with col1:
+                                st.metric("Characters", len(text))
+                            with col2:
+                                word_count = len(text.split())
+                                st.metric("Words", word_count)
+                            with col3:
+                                sentence_count = len(text.split('.'))
+                                st.metric("Sentences", sentence_count)
+                            with col4:
+                                avg_word_length = sum(len(word) for word in text.split()) / word_count if word_count > 0 else 0
+                                st.metric("Avg Word Length", f"{avg_word_length:.1f}")
+                            
+                            # Store for Q&A
+                            st.session_state.current_analysis = {
+                                'text': text,
+                                'filename': uploaded_file.name,
+                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            }
+                            
+                            # Show preview
+                            st.markdown("### Document Preview")
+                            st.text_area("Content:", text[:2000] + "..." if len(text) > 2000 else text, height=300)
+                            
+                        except Exception as inner_e:
+                            st.error(f"Error extracting text: {str(inner_e)}")
+                    else:
+                        st.error(f"Error processing {uploaded_file.type} file: {str(e)}")
+                        st.info("This file type may require additional processing capabilities.")
                     
             except Exception as e:
                 st.error(f"❌ Error processing document: {str(e)}")
