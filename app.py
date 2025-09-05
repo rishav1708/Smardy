@@ -28,8 +28,9 @@ from utils.document_processor import DocumentProcessor
 from models.ml_analyzer import MLDocumentAnalyzer
 from models.genai_analyzer import GenAIDocumentAnalyzer
 
-# Version identifier for deployment tracking
-APP_VERSION = "v2.1-fixed-horizontal-bar"
+# Version identifier for deployment tracking  
+# DEPLOYMENT MARKER: 2025-09-05-02:46 - CACHE BUST FORCE DEPLOY
+APP_VERSION = "v2.2-FORCED-DEPLOY-CACHE-BUST"
 
 # Configure page
 st.set_page_config(
@@ -115,9 +116,9 @@ except Exception as e:
 def main():
     """Main application function"""
     
-    # Header
-    st.markdown('<h1 class="main-header">📄 Smart Document Analyzer</h1>', unsafe_allow_html=True)
-    st.markdown("**Powered by ML & GenAI | Built by Rishav Kant, BIT Mesra**")
+    # Header  
+    st.markdown('<h1 class="main-header">📄 Smart Document Analyzer ✨ FIXED</h1>', unsafe_allow_html=True)
+    st.markdown("**Powered by ML & GenAI | Built by Rishav Kant, BIT Mesra | 🔥 Cache-Bust Deploy v2.2**")
     
     # Sidebar
     with st.sidebar:

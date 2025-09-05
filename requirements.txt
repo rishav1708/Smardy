@@ -1,4 +1,5 @@
-# Minimal requirements for Streamlit Cloud
+# Minimal requirements for Streamlit Cloud - Updated 2025-09-05
+# FORCE REBUILD - Cache bust deployment
 pandas
 numpy
 scikit-learn
@@ -9,6 +10,6 @@ wordcloud
 PyPDF2
 python-docx
 openpyxl
-streamlit
+streamlit>=1.28.0
 requests
 Pillow
