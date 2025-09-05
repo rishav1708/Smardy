@@ -448,8 +448,8 @@ def qa_assistant_tab():
     with col1:
         answer_method = st.selectbox(
             "Answer Method:",
-            ["auto", "openai", "local"],
-            help="Choose the AI model to use for answering"
+            ["local"],
+            help="Using local AI model for answering"
         )
     
     if question and st.button("🤔 Get Answer", type="primary"):
