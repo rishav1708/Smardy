@@ -94,8 +94,20 @@ try:
     doc_processor, ml_analyzer, genai_analyzer = load_analyzers()
     st.success("✅ All analysis models loaded successfully!")
 except Exception as e:
-    st.error(f"❌ Error loading models: {str(e)}")
-    st.stop()
+    st.warning(f"⚠️ Some models had loading issues: {str(e)}")
+    # Try to create fallback instances
+    try:
+        from utils.document_processor import DocumentProcessor
+        from models.ml_analyzer import MLDocumentAnalyzer  
+        from models.genai_analyzer import GenAIDocumentAnalyzer
+        
+        doc_processor = DocumentProcessor()
+        ml_analyzer = MLDocumentAnalyzer()
+        genai_analyzer = GenAIDocumentAnalyzer(use_huggingface=True)
+        st.info("ℹ️ Using fallback mode - some features may be limited")
+    except Exception as e2:
+        st.error(f"❌ Critical error: Cannot load any analyzers: {str(e2)}")
+        st.stop()
 
 def main():
     """Main application function"""
@@ -120,9 +132,14 @@ def main():
         """)
         
         st.markdown("### 📊 Model Status")
-        status = genai_analyzer.check_api_status()
-        st.write("🤖 Local ML Models: ✅" if all(status['local_models'].values()) else "🤖 Local ML Models: ⚠️")
-        st.write("🤗 Hugging Face API: ✅" if status['huggingface_available'] else "🤗 Hugging Face API: ❌")
+        try:
+            status = genai_analyzer.check_api_status()
+            st.write("🤖 Local ML Models: ✅" if all(status['local_models'].values()) else "🤖 Local ML Models: ⚠️")
+            st.write("🤗 Hugging Face API: ✅" if status['huggingface_available'] else "🤗 Hugging Face API: ❌")
+        except Exception as e:
+            st.write("🤖 Local ML Models: ⚠️")
+            st.write("🤗 Hugging Face API: ⚠️")
+            st.caption("Status check temporarily unavailable")
     
     # Main tabs
     tab1, tab2, tab3, tab4 = st.tabs(["📤 Upload & Analyze", "📈 Analysis Dashboard", "💬 Q&A Assistant", "📚 Document Library"])

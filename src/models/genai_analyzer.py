@@ -670,27 +670,33 @@ class GenAIDocumentAnalyzer:
         """
         Check the status of Hugging Face API and local models
         """
-        status = {
-            'huggingface_available': self.huggingface_available,
-            'local_models': {
-                'summarizer': self.summarizer is not None,
-                'qa_model': self.qa_model is not None,
-                'sentence_model': self.sentence_model is not None
+        try:
+            status = {
+                'huggingface_available': self.huggingface_available,
+                'local_models': {
+                    'summarizer': self.summarizer is not None,
+                    'qa_model': self.qa_model is not None,
+                    'sentence_model': self.sentence_model is not None
+                }
             }
-        }
-        
-        if self.huggingface_available:
-            try:
-                # Test Hugging Face connection with a simple request
-                test_result = self._query_huggingface(
-                    "gpt2", 
-                    {"inputs": "test", "parameters": {"max_length": 10}}
-                )
-                if "error" not in test_result:
-                    status['huggingface_connection'] = 'working'
-                else:
-                    status['huggingface_connection'] = f'limited: {test_result.get("error", "unknown")}'
-            except Exception as e:
-                status['huggingface_connection'] = f'error: {str(e)}'
-        
-        return status
+            
+            # Skip connection test for Streamlit Cloud to avoid startup delays
+            if self.huggingface_available:
+                status['huggingface_connection'] = 'available'
+            else:
+                status['huggingface_connection'] = 'unavailable'
+            
+            return status
+        except Exception as e:
+            logger.error(f"Error checking API status: {str(e)}")
+            # Return a safe default status
+            return {
+                'huggingface_available': False,
+                'local_models': {
+                    'summarizer': False,
+                    'qa_model': False,
+                    'sentence_model': False
+                },
+                'huggingface_connection': 'error',
+                'error': str(e)
+            }
