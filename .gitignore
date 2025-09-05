@@ -190,7 +190,8 @@ logs/
 *.log
 
 # Streamlit
-.streamlit/
+.streamlit/credentials.toml
+.streamlit/secrets.toml
 
 # ML/AI specific
 wandb/
@@ -220,3 +221,4 @@ docs/build/
 .coverage
 htmlcov/
 .pytest_cache/
+.env

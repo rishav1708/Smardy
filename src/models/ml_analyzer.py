@@ -27,41 +27,66 @@ from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.chunk import ne_chunk
 from nltk.tag import pos_tag
 from textblob import TextBlob
-from wordcloud import WordCloud
+try:
+    from wordcloud import WordCloud
+    WORDCLOUD_AVAILABLE = True
+except ImportError:
+    WORDCLOUD_AVAILABLE = False
+    print("WordCloud not available")
 
-# Download required NLTK data
+# Download required NLTK data with SSL bypass
+import ssl
 try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-    
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords')
-    
-try:
-    nltk.data.find('corpora/wordnet')
-except LookupError:
-    nltk.download('wordnet')
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
 
-try:
-    nltk.data.find('taggers/averaged_perceptron_tagger')
-except LookupError:
-    nltk.download('averaged_perceptron_tagger')
+def safe_nltk_download(resource):
+    """Safely download NLTK data with error handling"""
+    try:
+        nltk.data.find(resource)
+        return True
+    except LookupError:
+        try:
+            nltk.download(resource.split('/')[-1], quiet=True)
+            return True
+        except Exception as e:
+            print(f"Could not download NLTK resource {resource}: {str(e)}")
+            return False
 
-try:
-    nltk.data.find('chunkers/maxent_ne_chunker')
-except LookupError:
-    nltk.download('maxent_ne_chunker')
-
-try:
-    nltk.data.find('corpora/words')
-except LookupError:
-    nltk.download('words')
+# Try to download required NLTK data
+safe_nltk_download('tokenizers/punkt')
+safe_nltk_download('corpora/stopwords')
+safe_nltk_download('corpora/wordnet')
+safe_nltk_download('taggers/averaged_perceptron_tagger')
+safe_nltk_download('chunkers/maxent_ne_chunker')
+safe_nltk_download('corpora/words')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Safe tokenization functions with fallbacks
+def safe_word_tokenize(text):
+    """Safely tokenize text with fallback"""
+    try:
+        return word_tokenize(text)
+    except Exception:
+        # Simple fallback tokenization
+        import string
+        text = text.translate(str.maketrans('', '', string.punctuation))
+        return text.split()
+
+def safe_sent_tokenize(text):
+    """Safely tokenize sentences with fallback"""
+    try:
+        return sent_tokenize(text)
+    except Exception:
+        # Simple fallback sentence tokenization
+        import re
+        sentences = re.split(r'[.!?]+', text)
+        return [s.strip() for s in sentences if s.strip()]
 
 
 class MLDocumentAnalyzer:
@@ -88,7 +113,24 @@ class MLDocumentAnalyzer:
         self.topic_model = LatentDirichletAllocation(n_components=5, random_state=42)
         self.stemmer = PorterStemmer()
         self.lemmatizer = WordNetLemmatizer()
-        self.stop_words = set(stopwords.words('english'))
+        
+        # Try to get NLTK stopwords, fallback to basic English stopwords
+        try:
+            self.stop_words = set(stopwords.words('english'))
+        except Exception as e:
+            logger.warning(f"Could not load NLTK stopwords: {str(e)}")
+            # Fallback basic English stopwords
+            self.stop_words = {
+                'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours',
+                'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers',
+                'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves',
+                'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are',
+                'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does',
+                'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until',
+                'while', 'of', 'at', 'by', 'for', 'with', 'through', 'during', 'before', 'after',
+                'above', 'below', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again',
+                'further', 'then', 'once'
+            }
         
         # Document categories for classification
         self.document_categories = {
@@ -109,7 +151,7 @@ class MLDocumentAnalyzer:
         text = re.sub(r'[^a-zA-Z\s]', '', text)
         
         # Tokenize
-        tokens = word_tokenize(text)
+        tokens = safe_word_tokenize(text)
         
         # Remove stopwords
         tokens = [token for token in tokens if token not in self.stop_words and len(token) > 2]
@@ -182,7 +224,7 @@ class MLDocumentAnalyzer:
         Extract named entities using NLTK
         """
         try:
-            tokens = word_tokenize(text)
+            tokens = safe_word_tokenize(text)
             pos_tags = pos_tag(tokens)
             entities = ne_chunk(pos_tags, binary=False)
             
@@ -376,8 +418,8 @@ class MLDocumentAnalyzer:
         """
         Analyze text readability using various metrics
         """
-        sentences = sent_tokenize(text)
-        words = word_tokenize(text)
+        sentences = safe_sent_tokenize(text)
+        words = safe_word_tokenize(text)
         words = [word for word in words if word.isalpha()]
         
         if not sentences or not words:
