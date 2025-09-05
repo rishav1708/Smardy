@@ -318,8 +318,12 @@ def qa_assistant_tab(genai_analyzer):
             # Show API key status
             import os
             api_key = os.getenv('OPENAI_API_KEY')
-            if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
-                api_key = st.secrets['OPENAI_API_KEY']
+            try:
+                if hasattr(st, 'secrets') and st.secrets is not None and 'OPENAI_API_KEY' in st.secrets:
+                    api_key = st.secrets['OPENAI_API_KEY']
+            except Exception:
+                # Secrets not available, use environment variable
+                pass
             
             if api_key:
                 st.info(f"🔑 OpenAI API Key: {'*' * 20}{api_key[-4:] if len(api_key) > 4 else 'FOUND'}")

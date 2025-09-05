@@ -221,3 +221,4 @@ docs/build/
 .coverage
 htmlcov/
 .pytest_cache/
+.env

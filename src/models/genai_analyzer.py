@@ -22,12 +22,19 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Try to get API key from Streamlit secrets if available
+# Try to get API key from Streamlit secrets if available (only in cloud deployment)
 try:
     import streamlit as st
-    if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
-        os.environ['OPENAI_API_KEY'] = st.secrets['OPENAI_API_KEY']
+    # Only try to access secrets if we're in a Streamlit app context and secrets exist
+    if hasattr(st, 'secrets') and st.secrets is not None:
+        try:
+            if 'OPENAI_API_KEY' in st.secrets:
+                os.environ['OPENAI_API_KEY'] = st.secrets['OPENAI_API_KEY']
+        except Exception:
+            # Secrets not available, continue with environment variables
+            pass
 except (ImportError, KeyError, AttributeError):
+    # Streamlit not available or secrets not configured
     pass
 
 logging.basicConfig(level=logging.INFO)
