@@ -7,7 +7,12 @@ import os
 import json
 import logging
 from typing import Dict, List, Optional, Union
-import openai
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    print("OpenAI not available")
 # from transformers import pipeline, AutoTokenizer, AutoModel  # Local model loading disabled for Python 3.13
 # import torch
 # from sentence_transformers import SentenceTransformer  # Not available in Python 3.13
@@ -16,6 +21,14 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# Try to get API key from Streamlit secrets if available
+try:
+    import streamlit as st
+    if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
+        os.environ['OPENAI_API_KEY'] = st.secrets['OPENAI_API_KEY']
+except (ImportError, KeyError, AttributeError):
+    pass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,10 +49,8 @@ class GenAIDocumentAnalyzer:
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
         
         # Initialize OpenAI if API key is available
-        if self.use_openai and self.openai_api_key:
+        if self.use_openai and self.openai_api_key and OPENAI_AVAILABLE:
             try:
-                # Use the new OpenAI client
-                from openai import OpenAI
                 self.openai_client = OpenAI(api_key=self.openai_api_key)
                 self.openai_available = True
                 logger.info("OpenAI client initialized successfully")
@@ -50,7 +61,10 @@ class GenAIDocumentAnalyzer:
         else:
             self.openai_available = False
             self.openai_client = None
-            logger.warning("OpenAI API key not found. Using local models only.")
+            if not OPENAI_AVAILABLE:
+                logger.warning("OpenAI package not available")
+            elif not self.openai_api_key:
+                logger.warning("OpenAI API key not found. Using local models only.")
         
         # Initialize local models
         self._init_local_models()

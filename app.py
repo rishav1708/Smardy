@@ -310,15 +310,31 @@ def qa_assistant_tab(genai_analyzer):
     analysis = st.session_state.current_analysis
     st.markdown(f"### Q&A for: {analysis['filename']}")
     
-    # Check API status
+    # Check API status and show detailed information
     if genai_analyzer:
         try:
             status = genai_analyzer.check_api_status()
+            
+            # Show API key status
+            import os
+            api_key = os.getenv('OPENAI_API_KEY')
+            if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
+                api_key = st.secrets['OPENAI_API_KEY']
+            
+            if api_key:
+                st.info(f"🔑 OpenAI API Key: {'*' * 20}{api_key[-4:] if len(api_key) > 4 else 'FOUND'}")
+            else:
+                st.error("❌ No OpenAI API Key found")
+            
             if status.get('openai_available', False):
                 st.success("🧠 OpenAI API is available - Enhanced Q&A enabled")
             else:
                 st.warning("⚠️ OpenAI API not available - Using basic keyword search")
-        except:
+                if 'openai_connection' in status:
+                    st.error(f"Connection issue: {status['openai_connection']}")
+                    
+        except Exception as e:
+            st.error(f"Error checking API status: {str(e)}")
             st.warning("⚠️ Using basic keyword search")
     
     # Question input
@@ -341,6 +357,19 @@ def qa_assistant_tab(genai_analyzer):
         with st.spinner("Thinking..."):
             try:
                 if genai_analyzer:
+                    st.info(f"Asking question: '{question}' using method: '{method}'")
+                    
+                    # Show some debug info
+                    with st.expander("Debug Information", expanded=False):
+                        st.write(f"**Question length:** {len(question)} characters")
+                        st.write(f"**Document length:** {len(analysis['text'])} characters")
+                        st.write(f"**Selected method:** {method}")
+                        st.write(f"**GenAI analyzer available:** {genai_analyzer is not None}")
+                        
+                        if genai_analyzer:
+                            st.write(f"**OpenAI available:** {getattr(genai_analyzer, 'openai_available', False)}")
+                            st.write(f"**OpenAI client:** {getattr(genai_analyzer, 'openai_client', None) is not None}")
+                    
                     result = genai_analyzer.answer_question(analysis['text'], question, method)
                     
                     # Display answer
@@ -356,11 +385,18 @@ def qa_assistant_tab(genai_analyzer):
                     
                     if 'error' in result:
                         st.error(f"Note: {result['error']}")
+                        
+                    # Show full result for debugging
+                    with st.expander("Full Result (Debug)", expanded=False):
+                        st.json(result)
+                        
                 else:
                     st.error("Q&A analyzer not available")
                     
             except Exception as e:
                 st.error(f"Error answering question: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
     
     # Suggested questions
     st.markdown("### 🤔 Suggested Questions")
@@ -374,7 +410,11 @@ def qa_assistant_tab(genai_analyzer):
     
     for suggestion in suggested:
         if st.button(suggestion, key=f"suggest_{hash(suggestion)}"):
-            st.experimental_rerun()
+            try:
+                st.rerun()
+            except AttributeError:
+                # Fallback for older Streamlit versions
+                st.experimental_rerun()
 
 def document_library_tab():
     """Document library tab"""
