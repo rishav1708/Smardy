@@ -6,8 +6,8 @@ Integrates with LLM APIs for advanced document analysis, summarization, and Q&A
 import os
 import json
 import logging
+import requests
 from typing import Dict, List, Optional, Union
-import openai
 from transformers import pipeline, AutoTokenizer, AutoModel
 import torch
 from sentence_transformers import SentenceTransformer
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 class GenAIDocumentAnalyzer:
     """
-    GenAI-powered document analyzer using modern LLM capabilities:
+    GenAI-powered document analyzer using Hugging Face and local models:
     - Text summarization (extractive and abstractive)
     - Question answering
     - Content generation
@@ -31,20 +31,51 @@ class GenAIDocumentAnalyzer:
     - Advanced insights extraction
     """
     
-    def __init__(self, use_openai: bool = True):
-        self.use_openai = use_openai
-        self.openai_api_key = os.getenv('OPENAI_API_KEY')
+    def __init__(self, use_huggingface: bool = True):
+        self.use_huggingface = use_huggingface
+        self.hf_api_key = os.getenv('HUGGING_FACE_API_KEY')
+        self.hf_api_url = "https://api-inference.huggingface.co/models/"
         
-        # Initialize OpenAI if API key is available
-        if self.use_openai and self.openai_api_key:
-            openai.api_key = self.openai_api_key
-            self.openai_available = True
+        # Hugging Face is available even without API key (rate limited)
+        self.huggingface_available = True
+        if self.hf_api_key:
+            logger.info("✅ Hugging Face API key found")
         else:
-            self.openai_available = False
-            logger.warning("OpenAI API key not found. Using local models only.")
+            logger.info("ℹ️ Using Hugging Face free tier (rate limited)")
         
         # Initialize local models
         self._init_local_models()
+    
+    def _query_huggingface(self, model_name: str, payload: dict, max_retries: int = 3) -> dict:
+        """
+        Query Hugging Face Inference API with retries
+        """
+        headers = {}
+        if self.hf_api_key:
+            headers["Authorization"] = f"Bearer {self.hf_api_key}"
+        
+        url = f"{self.hf_api_url}{model_name}"
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                
+                if response.status_code == 200:
+                    return response.json()
+                elif response.status_code == 503:
+                    # Model is loading, wait a bit
+                    import time
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                else:
+                    logger.warning(f"HF API error {response.status_code}: {response.text}")
+                    return {"error": f"API error {response.status_code}"}
+            except Exception as e:
+                logger.warning(f"HF API attempt {attempt + 1} failed: {str(e)}")
+                if attempt == max_retries - 1:
+                    return {"error": str(e)}
+        
+        return {"error": "Max retries exceeded"}
     
     def _init_local_models(self):
         """Initialize local transformer models with graceful fallbacks"""
@@ -124,11 +155,11 @@ class GenAIDocumentAnalyzer:
         
         # Choose method
         if method == "auto":
-            method = "openai" if self.openai_available else "local"
+            method = "huggingface" if self.huggingface_available else "local"
         
         try:
-            if method == "openai" and self.openai_available:
-                return self._summarize_with_openai(text, max_length)
+            if method == "huggingface" and self.huggingface_available:
+                return self._summarize_with_huggingface(text, max_length)
             else:
                 return self._summarize_with_local_model(text, max_length, min_length)
                 
@@ -140,42 +171,54 @@ class GenAIDocumentAnalyzer:
                 'error': str(e)
             }
     
-    def _summarize_with_openai(self, text: str, max_length: int) -> Dict:
-        """Generate summary using OpenAI GPT"""
+    def _summarize_with_huggingface(self, text: str, max_length: int) -> Dict:
+        """Generate summary using Hugging Face models"""
         try:
-            # Truncate text if too long (GPT-3.5 has token limits)
-            max_tokens = 3000  # Leave room for prompt and response
+            # Truncate text if too long
+            max_input_length = 1000  # Keep within model limits
             words = text.split()
-            if len(words) > max_tokens:
-                text = ' '.join(words[:max_tokens])
+            if len(words) > max_input_length:
+                text = ' '.join(words[:max_input_length])
             
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a professional document summarizer. Create concise, informative summaries that capture the key points and main ideas."
-                    },
-                    {
-                        "role": "user", 
-                        "content": f"Please summarize the following text in approximately {max_length} words, focusing on the main points and key insights:\\n\\n{text}"
+            # Try different summarization models in order of preference
+            models_to_try = [
+                "facebook/bart-large-cnn",
+                "microsoft/DialoGPT-medium",
+                "t5-small"
+            ]
+            
+            for model_name in models_to_try:
+                try:
+                    payload = {
+                        "inputs": text,
+                        "parameters": {
+                            "max_length": max_length,
+                            "min_length": max(10, max_length // 4),
+                            "do_sample": False
+                        }
                     }
-                ],
-                max_tokens=max_length * 2,  # Allow some buffer
-                temperature=0.3
-            )
+                    
+                    result = self._query_huggingface(model_name, payload)
+                    
+                    if "error" not in result and result:
+                        if isinstance(result, list) and len(result) > 0:
+                            summary = result[0].get('summary_text', '')
+                            if summary:
+                                return {
+                                    'summary': summary,
+                                    'method': f'huggingface_{model_name.split("/")[-1]}',
+                                    'word_count': len(summary.split()),
+                                    'compression_ratio': round(len(text.split()) / len(summary.split()), 2)
+                                }
+                except Exception as e:
+                    logger.warning(f"Failed with model {model_name}: {str(e)}")
+                    continue
             
-            summary = response.choices[0].message.content.strip()
-            
-            return {
-                'summary': summary,
-                'method': 'openai',
-                'word_count': len(summary.split()),
-                'compression_ratio': round(len(text.split()) / len(summary.split()), 2)
-            }
+            # If all models fail, raise exception to trigger fallback
+            raise ValueError("All Hugging Face summarization models failed")
             
         except Exception as e:
-            logger.error(f"OpenAI summarization error: {str(e)}")
+            logger.error(f"Hugging Face summarization error: {str(e)}")
             raise e
     
     def _summarize_with_local_model(self, text: str, max_length: int, min_length: int) -> Dict:
@@ -266,61 +309,82 @@ class GenAIDocumentAnalyzer:
     
     def answer_question(self, text: str, question: str, method: str = "auto") -> Dict:
         """
-        Answer questions about the document
+        Answer questions about the document with robust fallback handling
         """
         if method == "auto":
-            method = "openai" if self.openai_available else "local"
+            # Try Hugging Face first, then local models, then simple search
+            method = "huggingface" if self.huggingface_available else "local"
         
         try:
-            if method == "openai" and self.openai_available:
-                return self._qa_with_openai(text, question)
+            if method == "huggingface" and self.huggingface_available:
+                return self._qa_with_huggingface(text, question)
             else:
                 return self._qa_with_local_model(text, question)
                 
         except Exception as e:
             logger.error(f"Question answering error: {str(e)}")
-            return {
-                'answer': "I'm unable to answer that question at the moment.",
-                'confidence': 0.0,
-                'method': 'error',
-                'error': str(e)
-            }
+            # If everything fails, try simple search as last resort
+            try:
+                return self._qa_with_simple_search(text, question)
+            except Exception as e2:
+                logger.error(f"All Q&A methods failed: {str(e2)}")
+                return {
+                    'answer': "I'm having trouble analyzing your question. Please try asking about specific topics mentioned in the document.",
+                    'confidence': 0.0,
+                    'method': 'error_fallback',
+                    'error': str(e)
+                }
     
-    def _qa_with_openai(self, text: str, question: str) -> Dict:
-        """Answer question using OpenAI"""
+    def _qa_with_huggingface(self, text: str, question: str) -> Dict:
+        """Answer question using Hugging Face models"""
         try:
             # Truncate text if too long
-            max_tokens = 2500
+            max_context_length = 512
             words = text.split()
-            if len(words) > max_tokens:
-                text = ' '.join(words[:max_tokens])
+            if len(words) > max_context_length:
+                text = ' '.join(words[:max_context_length])
             
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a helpful assistant that answers questions based on provided documents. If you cannot find the answer in the document, say so clearly."
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Based on the following document, please answer this question: {question}\\n\\nDocument:\\n{text}"
+            # Try different Q&A models
+            models_to_try = [
+                "deepset/roberta-base-squad2",
+                "distilbert-base-cased-distilled-squad",
+                "microsoft/DialoGPT-medium"
+            ]
+            
+            for model_name in models_to_try:
+                try:
+                    payload = {
+                        "inputs": {
+                            "question": question,
+                            "context": text
+                        }
                     }
-                ],
-                max_tokens=200,
-                temperature=0.1
-            )
+                    
+                    result = self._query_huggingface(model_name, payload)
+                    
+                    if "error" not in result and result:
+                        if isinstance(result, dict):
+                            answer = result.get('answer', '')
+                            score = result.get('score', 0.0)
+                            
+                            if answer and len(answer.strip()) > 0:
+                                return {
+                                    'answer': answer,
+                                    'confidence': round(float(score), 3),
+                                    'method': f'huggingface_{model_name.split("/")[-1]}',
+                                    'start_position': result.get('start', -1),
+                                    'end_position': result.get('end', -1)
+                                }
+                        
+                except Exception as e:
+                    logger.warning(f"HF Q&A model {model_name} failed: {str(e)}")
+                    continue
             
-            answer = response.choices[0].message.content.strip()
-            
-            return {
-                'answer': answer,
-                'method': 'openai',
-                'confidence': 0.85  # OpenAI doesn't provide confidence scores
-            }
+            # If all models fail, raise to trigger local fallback
+            raise ValueError("All Hugging Face Q&A models failed")
             
         except Exception as e:
-            logger.error(f"OpenAI QA error: {str(e)}")
+            logger.error(f"Hugging Face Q&A error: {str(e)}")
             raise e
     
     def _qa_with_local_model(self, text: str, question: str) -> Dict:
@@ -419,53 +483,132 @@ class GenAIDocumentAnalyzer:
     
     def generate_insights(self, text: str) -> Dict:
         """
-        Generate advanced insights about the document using GenAI
+        Generate advanced insights about the document using Hugging Face
         """
-        if not self.openai_available:
-            return {
-                'insights': ["GenAI insights require OpenAI API key"],
-                'error': 'OpenAI API not available'
-            }
-        
         try:
-            # Truncate text if too long
-            max_tokens = 2000
-            words = text.split()
-            if len(words) > max_tokens:
-                text = ' '.join(words[:max_tokens])
-            
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert document analyst. Provide insightful analysis including key themes, potential implications, and notable patterns in the text."
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Please analyze the following document and provide key insights, themes, and observations:\\n\\n{text}"
-                    }
-                ],
-                max_tokens=300,
-                temperature=0.4
-            )
-            
-            insights_text = response.choices[0].message.content.strip()
-            
-            # Split insights into list
-            insights = [insight.strip() for insight in insights_text.split('\\n') if insight.strip()]
-            
-            return {
-                'insights': insights,
-                'method': 'openai'
-            }
-            
+            if self.huggingface_available:
+                return self._generate_insights_with_huggingface(text)
+            else:
+                # Use local insights as fallback
+                insights = self._generate_local_insights(text)
+                return {
+                    'insights': insights,
+                    'method': 'local_analysis'
+                }
         except Exception as e:
             logger.error(f"Insights generation error: {str(e)}")
-            return {
-                'insights': ["Error generating insights"],
-                'error': str(e)
-            }
+            # Fallback to local insights
+            try:
+                insights = self._generate_local_insights(text)
+                return {
+                    'insights': insights,
+                    'method': 'local_fallback'
+                }
+            except Exception as e2:
+                return {
+                    'insights': ["Unable to generate insights at this time"],
+                    'error': str(e)
+                }
+    
+    def _generate_insights_with_huggingface(self, text: str) -> Dict:
+        """
+        Generate insights using Hugging Face text generation models
+        """
+        # Truncate text if too long
+        max_tokens = 500
+        words = text.split()
+        if len(words) > max_tokens:
+            text = ' '.join(words[:max_tokens])
+        
+        # Try different text generation models for insights
+        models_to_try = [
+            "microsoft/DialoGPT-medium",
+            "gpt2",
+            "distilgpt2"
+        ]
+        
+        prompt = f"Analyze this document and provide key insights: {text}\n\nKey insights:"
+        
+        for model_name in models_to_try:
+            try:
+                payload = {
+                    "inputs": prompt,
+                    "parameters": {
+                        "max_length": 200,
+                        "temperature": 0.7,
+                        "do_sample": True
+                    }
+                }
+                
+                result = self._query_huggingface(model_name, payload)
+                
+                if "error" not in result and result:
+                    if isinstance(result, list) and len(result) > 0:
+                        generated_text = result[0].get('generated_text', '')
+                        # Extract insights from generated text
+                        insights_part = generated_text.replace(prompt, '').strip()
+                        insights = [insight.strip() for insight in insights_part.split('.') if insight.strip()]
+                        
+                        if insights and len(insights) > 0:
+                            return {
+                                'insights': insights[:5],  # Limit to 5 insights
+                                'method': f'huggingface_{model_name.split("/")[-1]}'
+                            }
+            except Exception as e:
+                logger.warning(f"HF insights model {model_name} failed: {str(e)}")
+                continue
+        
+        # If all HF models fail, use local insights
+        insights = self._generate_local_insights(text)
+        return {
+            'insights': insights,
+            'method': 'local_fallback'
+        }
+    
+    def _generate_local_insights(self, text: str) -> List[str]:
+        """
+        Generate basic insights using local text analysis
+        """
+        words = text.split()
+        sentences = text.split('. ')
+        
+        insights = []
+        
+        # Document length insight
+        word_count = len(words)
+        if word_count < 100:
+            insights.append("This appears to be a short document or excerpt")
+        elif word_count > 1000:
+            insights.append("This is a comprehensive document with substantial content")
+        else:
+            insights.append("This document contains a moderate amount of content")
+        
+        # Sentence structure insight
+        avg_sentence_length = word_count / max(len(sentences), 1)
+        if avg_sentence_length > 20:
+            insights.append("The document uses complex sentence structures")
+        elif avg_sentence_length < 10:
+            insights.append("The document uses simple, direct language")
+        else:
+            insights.append("The document has balanced sentence complexity")
+        
+        # Content analysis based on common patterns
+        text_lower = text.lower()
+        
+        if any(word in text_lower for word in ['research', 'study', 'analysis', 'methodology']):
+            insights.append("This appears to be research or academic content")
+        
+        if any(word in text_lower for word in ['business', 'market', 'revenue', 'profit']):
+            insights.append("This document contains business-related information")
+        
+        if any(word in text_lower for word in ['legal', 'contract', 'agreement', 'terms']):
+            insights.append("This appears to contain legal or contractual content")
+        
+        # If no specific insights were found, add a general one
+        if len(insights) == 2:  # Only length and sentence structure insights
+            insights.append("The document contains varied content suitable for analysis")
+        
+        return insights
     
     def compute_semantic_similarity(self, text1: str, text2: str) -> Dict:
         """
@@ -509,46 +652,81 @@ class GenAIDocumentAnalyzer:
     
     def generate_keywords_genai(self, text: str, num_keywords: int = 10) -> Dict:
         """
-        Generate keywords using GenAI for more contextual understanding
+        Generate keywords using Hugging Face for contextual understanding
         """
-        if not self.openai_available:
-            return {'keywords': [], 'error': 'OpenAI API not available'}
-        
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"Extract the {num_keywords} most important keywords or key phrases from the text. Return them as a comma-separated list."
-                    },
-                    {
-                        "role": "user",
-                        "content": text[:2000]  # Limit text length
+            if self.huggingface_available:
+                # Try to use HF text generation for keyword extraction
+                prompt = f"Extract the most important keywords from this text: {text[:800]}\n\nKeywords:"
+                
+                payload = {
+                    "inputs": prompt,
+                    "parameters": {
+                        "max_length": 50,
+                        "temperature": 0.1,
+                        "do_sample": True
                     }
-                ],
-                max_tokens=100,
-                temperature=0.1
-            )
+                }
+                
+                result = self._query_huggingface("gpt2", payload)
+                
+                if "error" not in result and result:
+                    if isinstance(result, list) and len(result) > 0:
+                        generated_text = result[0].get('generated_text', '')
+                        keywords_part = generated_text.replace(prompt, '').strip()
+                        keywords = [kw.strip() for kw in keywords_part.split(',') if kw.strip()]
+                        
+                        if keywords:
+                            return {
+                                'keywords': keywords[:num_keywords],
+                                'method': 'huggingface_gpt2'
+                            }
             
-            keywords_text = response.choices[0].message.content.strip()
-            keywords = [kw.strip() for kw in keywords_text.split(',')]
-            
-            return {
-                'keywords': keywords[:num_keywords],
-                'method': 'genai'
-            }
+            # Fallback to simple keyword extraction
+            return self._extract_keywords_local(text, num_keywords)
             
         except Exception as e:
-            logger.error(f"GenAI keyword extraction error: {str(e)}")
-            return {'keywords': [], 'error': str(e)}
+            logger.error(f"Keyword extraction error: {str(e)}")
+            return self._extract_keywords_local(text, num_keywords)
+    
+    def _extract_keywords_local(self, text: str, num_keywords: int) -> Dict:
+        """
+        Extract keywords using local text analysis methods
+        """
+        try:
+            import re
+            from collections import Counter
+            
+            # Clean and tokenize text
+            words = re.findall(r'\b\w{3,}\b', text.lower())
+            
+            # Common stop words to filter out
+            stop_words = {'the', 'and', 'are', 'for', 'with', 'this', 'that', 'from', 'they', 'have', 'will', 'been', 'were', 'said', 'each', 'which', 'their', 'time', 'would', 'there', 'could', 'other', 'more', 'very', 'into', 'after', 'first', 'well', 'also', 'where', 'much', 'than', 'only', 'its', 'now', 'way', 'may', 'when', 'them', 'some', 'what', 'make', 'like', 'him', 'her', 'how', 'did', 'get', 'has', 'had', 'who'}
+            
+            # Filter out stop words and count word frequency
+            filtered_words = [word for word in words if word not in stop_words and len(word) > 3]
+            word_counts = Counter(filtered_words)
+            
+            # Get most common words
+            keywords = [word for word, _ in word_counts.most_common(num_keywords)]
+            
+            return {
+                'keywords': keywords,
+                'method': 'local_frequency'
+            }
+        except Exception as e:
+            return {
+                'keywords': [],
+                'error': str(e),
+                'method': 'error'
+            }
     
     def check_api_status(self) -> Dict:
         """
-        Check the status of various API connections and models
+        Check the status of Hugging Face API and local models
         """
         status = {
-            'openai_available': self.openai_available,
+            'huggingface_available': self.huggingface_available,
             'local_models': {
                 'summarizer': self.summarizer is not None,
                 'qa_model': self.qa_model is not None,
@@ -556,17 +734,18 @@ class GenAIDocumentAnalyzer:
             }
         }
         
-        if self.openai_available:
+        if self.huggingface_available:
             try:
-                # Test OpenAI connection with a minimal request
-                openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": "Hi"}],
-                    max_tokens=1
+                # Test Hugging Face connection with a simple request
+                test_result = self._query_huggingface(
+                    "gpt2", 
+                    {"inputs": "test", "parameters": {"max_length": 10}}
                 )
-                status['openai_connection'] = 'working'
+                if "error" not in test_result:
+                    status['huggingface_connection'] = 'working'
+                else:
+                    status['huggingface_connection'] = f'limited: {test_result.get("error", "unknown")}'
             except Exception as e:
-                status['openai_connection'] = f'error: {str(e)}'
-                status['openai_available'] = False
+                status['huggingface_connection'] = f'error: {str(e)}'
         
         return status

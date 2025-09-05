@@ -111,7 +111,7 @@ def main():
         st.markdown("""
         - **Document Processing**: PDF, DOCX, TXT, CSV
         - **Traditional ML**: Classification, Clustering, NLP
-        - **GenAI Integration**: GPT-powered insights
+        - **GenAI Integration**: Hugging Face powered insights
         - **Sentiment Analysis**: Advanced emotion detection
         - **Q&A System**: Ask questions about your documents
         - **Visualization**: Interactive charts and word clouds
@@ -120,7 +120,7 @@ def main():
         st.markdown("### 📊 Model Status")
         status = genai_analyzer.check_api_status()
         st.write("🤖 Local ML Models: ✅" if all(status['local_models'].values()) else "🤖 Local ML Models: ⚠️")
-        st.write("🧠 OpenAI API: ✅" if status['openai_available'] else "🧠 OpenAI API: ❌")
+        st.write("🤗 Hugging Face API: ✅" if status['huggingface_available'] else "🤗 Hugging Face API: ❌")
     
     # Main tabs
     tab1, tab2, tab3, tab4 = st.tabs(["📤 Upload & Analyze", "📈 Analysis Dashboard", "💬 Q&A Assistant", "📚 Document Library"])
@@ -448,8 +448,8 @@ def qa_assistant_tab():
     with col1:
         answer_method = st.selectbox(
             "Answer Method:",
-            ["local"],
-            help="Using local AI model for answering"
+            ["auto", "local"],
+            help="Auto: Try Hugging Face then local models | Local: Use only local models"
         )
     
     if question and st.button("🤔 Get Answer", type="primary"):
@@ -460,16 +460,30 @@ def qa_assistant_tab():
                 # Display answer
                 st.markdown("### 💡 Answer")
                 
-                if 'error' not in answer_result:
-                    st.success(answer_result['answer'])
+                # Always show the answer, even if it's from fallback methods
+                if answer_result.get('answer'):
+                    # Show different styling based on confidence
+                    confidence = answer_result.get('confidence', 0.0)
+                    method = answer_result.get('method', 'unknown')
                     
-                    # Show confidence if available
-                    if 'confidence' in answer_result:
-                        confidence = answer_result['confidence']
+                    if confidence > 0.5:
+                        st.success(answer_result['answer'])
+                    elif confidence > 0.0:
+                        st.info(answer_result['answer'])
+                    else:
+                        st.warning(answer_result['answer'])
+                    
+                    # Show method and confidence info
+                    if confidence > 0.0:
                         st.progress(confidence)
-                        st.caption(f"Confidence: {confidence:.2%} | Method: {answer_result['method']}")
+                        if 'fallback' in method:
+                            st.caption(f"📝 Using keyword search | Confidence: {confidence:.1%}")
+                        else:
+                            st.caption(f"Confidence: {confidence:.2%} | Method: {method}")
+                    else:
+                        st.caption("💡 Using simple text analysis")
                 else:
-                    st.error(f"Error: {answer_result['error']}")
+                    st.error(f"Error: {answer_result.get('error', 'Unknown error occurred')}")
                 
             except Exception as e:
                 st.error(f"Failed to generate answer: {str(e)}")
