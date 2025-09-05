@@ -341,7 +341,7 @@ def analysis_dashboard_tab():
             color=metrics_data['Count'],
             color_continuous_scale='Blues'
         )
-        st.plotly_chart(fig_metrics, use_container_width=True)
+        st.plotly_chart(fig_metrics, width='stretch')
     
     with col2:
         st.markdown("### 📊 Quick Stats")
@@ -405,7 +405,7 @@ def analysis_dashboard_tab():
                 yaxis_title="Words",
                 yaxis={'categoryorder': 'total ascending'}
             )
-            st.plotly_chart(fig_wordcloud, use_container_width=True)
+            st.plotly_chart(fig_wordcloud, width='stretch')
     
     # Named entities
     if 'entities' in results:
@@ -429,10 +429,10 @@ def analysis_dashboard_tab():
                 names=entity_counts.index,
                 title="Named Entities Distribution"
             )
-            st.plotly_chart(fig_entities, use_container_width=True)
+            st.plotly_chart(fig_entities, width='stretch')
             
             # Show entities table
-            st.dataframe(entity_df, use_container_width=True)
+            st.dataframe(entity_df, width='stretch')
     
     # GenAI insights
     if 'genai_insights' in results and 'insights' in results['genai_insights']:
