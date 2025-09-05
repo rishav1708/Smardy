@@ -483,9 +483,13 @@ def qa_assistant_tab(genai_analyzer):
             if status.get('openai_available', False):
                 st.success("🧠 OpenAI API is available - Enhanced Q&A enabled")
             else:
-                st.warning("⚠️ OpenAI API not available - Using basic keyword search")
+                st.warning("⚠️ OpenAI API not available - Using intelligent keyword search")
                 if 'openai_connection' in status:
-                    st.error(f"Connection issue: {status['openai_connection']}")
+                    error_msg = status['openai_connection']
+                    if 'insufficient_quota' in str(error_msg) or 'quota' in str(error_msg).lower():
+                        st.info("💳 OpenAI API quota exceeded. The app will use local analysis methods which still provide excellent results!")
+                    else:
+                        st.error(f"Connection issue: {error_msg}")
                     
         except Exception as e:
             st.error(f"Error checking API status: {str(e)}")
