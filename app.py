@@ -12,6 +12,7 @@ import numpy as np
 import sys
 import os
 import traceback
+from datetime import datetime
 
 # Configure page
 st.set_page_config(
@@ -228,6 +229,7 @@ def upload_and_analyze_tab(doc_processor, ml_analyzer, genai_analyzer):
     if uploaded_file and st.button("🚀 Analyze Document", type="primary"):
         with st.spinner("Processing document..."):
             try:
+                st.info("Starting document analysis...")
                 # Extract text using document processor
                 file_content = uploaded_file.getvalue()
                 
@@ -260,21 +262,30 @@ def upload_and_analyze_tab(doc_processor, ml_analyzer, genai_analyzer):
                         st.metric("Avg Word Length", f"{avg_word_length:.1f}")
                     
                     # Store the document for Q&A
-                    st.session_state.current_analysis = {
-                        'text': text,
-                        'filename': uploaded_file.name,
-                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'metadata': metadata
-                    }
+                    try:
+                        st.session_state.current_analysis = {
+                            'text': text,
+                            'filename': uploaded_file.name,
+                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'metadata': metadata
+                        }
+                    except Exception as e:
+                        st.error(f"Error storing analysis: {str(e)}")
+                        st.session_state.current_analysis = {
+                            'text': text,
+                            'filename': uploaded_file.name,
+                            'timestamp': 'Unknown',
+                            'metadata': metadata
+                        }
                     
                     # Perform ML Analysis
                     if run_ml_analysis and ml_analyzer:
                         with st.spinner("Running ML analysis..."):
-                            try:
-                                st.markdown("### 🤖 ML Analysis Results")
-                                
-                                # Sentiment analysis
-                                if include_sentiment:
+                            st.markdown("### 🤖 ML Analysis Results")
+                            
+                            # Sentiment analysis
+                            if include_sentiment:
+                                try:
                                     sentiment_result = ml_analyzer.analyze_sentiment(text)
                                     col1, col2, col3 = st.columns(3)
                                     with col1:
@@ -283,62 +294,75 @@ def upload_and_analyze_tab(doc_processor, ml_analyzer, genai_analyzer):
                                         st.metric("Polarity", f"{sentiment_result['polarity']:.2f}")
                                     with col3:
                                         st.metric("Subjectivity", f"{sentiment_result['subjectivity']:.2f}")
-                                
-                                # Document classification
+                                except Exception as e:
+                                    st.error(f"Sentiment analysis error: {str(e)}")
+                            
+                            # Document classification
+                            try:
                                 doc_type = ml_analyzer.classify_document_type(text)
                                 st.markdown(f"**📄 Document Type:** {doc_type['document_type']} (Confidence: {doc_type['confidence']:.1f}%)")
-                                
-                                # Keywords
+                            except Exception as e:
+                                st.error(f"Document classification error: {str(e)}")
+                            
+                            # Keywords
+                            try:
                                 keywords = ml_analyzer.extract_keywords(text, 10)
                                 if keywords:
                                     st.markdown("**🔑 Key Terms:**")
                                     keyword_text = ", ".join([f"{kw[0]} ({kw[1]:.3f})" for kw in keywords[:8]])
                                     st.write(keyword_text)
-                                
-                                # Named entities
-                                if extract_entities:
+                            except Exception as e:
+                                st.error(f"Keywords extraction error: {str(e)}")
+                            
+                            # Named entities
+                            if extract_entities:
+                                try:
                                     entities = ml_analyzer.extract_named_entities(text)
                                     if any(entities.values()):
                                         st.markdown("**👤 Named Entities:**")
                                         for entity_type, entity_list in entities.items():
                                             if entity_list:
                                                 st.write(f"**{entity_type}:** {', '.join(entity_list[:5])}")
-                                
-                                # Word cloud data
-                                if generate_wordcloud:
+                                except Exception as e:
+                                    st.error(f"Named entity extraction error: {str(e)}")
+                            
+                            # Word cloud data
+                            if generate_wordcloud:
+                                try:
                                     wc_data = ml_analyzer.generate_word_cloud_data(text)
                                     if wc_data.get('word_frequencies'):
                                         st.markdown("**☁️ Most Frequent Words:**")
                                         top_words = list(wc_data['word_frequencies'].items())[:10]
                                         word_text = ", ".join([f"{word} ({count})" for word, count in top_words])
                                         st.write(word_text)
-                                        
-                            except Exception as e:
-                                st.error(f"ML Analysis error: {str(e)}")
+                                except Exception as e:
+                                    st.error(f"Word cloud generation error: {str(e)}")
                     
                     # Perform GenAI Analysis
                     if run_genai_analysis and genai_analyzer and genai_analyzer.openai_available:
                         with st.spinner("Running GenAI analysis..."):
-                            try:
-                                st.markdown("### 🧠 GenAI Analysis Results")
-                                
-                                # Summarization
-                                if include_summarization:
+                            st.markdown("### 🧠 GenAI Analysis Results")
+                            
+                            # Summarization
+                            if include_summarization:
+                                try:
                                     summary_result = genai_analyzer.generate_summary(text, "auto", 150, 50)
                                     if 'summary' in summary_result:
                                         st.markdown("**📝 Summary:**")
                                         st.write(summary_result['summary'])
                                         st.caption(f"Method: {summary_result.get('method', 'unknown')}")
-                                
-                                # AI Insights
+                                except Exception as e:
+                                    st.error(f"Summarization error: {str(e)}")
+                            
+                            # AI Insights
+                            try:
                                 insights_result = genai_analyzer.generate_insights(text)
                                 if insights_result.get('insights'):
                                     st.markdown("**💡 AI Insights:**")
                                     for insight in insights_result['insights'][:3]:
                                         st.write(f"• {insight}")
-                                        
                             except Exception as e:
-                                st.error(f"GenAI Analysis error: {str(e)}")
+                                st.error(f"AI Insights error: {str(e)}")
                     
                     # Show text preview
                     st.markdown("### 📄 Document Preview")
@@ -370,11 +394,18 @@ def upload_and_analyze_tab(doc_processor, ml_analyzer, genai_analyzer):
                                 st.metric("Avg Word Length", f"{avg_word_length:.1f}")
                             
                             # Store for Q&A
-                            st.session_state.current_analysis = {
-                                'text': text,
-                                'filename': uploaded_file.name,
-                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            }
+                            try:
+                                st.session_state.current_analysis = {
+                                    'text': text,
+                                    'filename': uploaded_file.name,
+                                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                }
+                            except Exception as e:
+                                st.session_state.current_analysis = {
+                                    'text': text,
+                                    'filename': uploaded_file.name,
+                                    'timestamp': 'Unknown'
+                                }
                             
                             # Show preview
                             st.markdown("### Document Preview")
