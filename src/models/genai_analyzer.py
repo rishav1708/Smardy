@@ -54,6 +54,7 @@ class GenAIDocumentAnalyzer:
     def __init__(self, use_openai: bool = True):
         self.use_openai = use_openai
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
+        self.huggingface_api_key = os.getenv('HUGGINGFACE_API_KEY')
         
         # Initialize OpenAI if API key is available
         if self.use_openai and self.openai_api_key and OPENAI_AVAILABLE:
@@ -71,7 +72,15 @@ class GenAIDocumentAnalyzer:
             if not OPENAI_AVAILABLE:
                 logger.warning("OpenAI package not available")
             elif not self.openai_api_key:
-                logger.warning("OpenAI API key not found. Using local models only.")
+                logger.warning("OpenAI API key not found. Checking for alternatives...")
+        
+        # Initialize Hugging Face as fallback (FREE)
+        self.huggingface_available = False
+        if self.huggingface_api_key:
+            self.huggingface_available = True
+            logger.info("Hugging Face API available as free alternative")
+        else:
+            logger.info("Hugging Face API key not found - using local methods")
         
         # Initialize local models
         self._init_local_models()
@@ -250,6 +259,15 @@ class GenAIDocumentAnalyzer:
         try:
             if method == "openai" and self.openai_available:
                 return self._qa_with_openai(text, question)
+            elif method == "huggingface" and self.huggingface_available:
+                return self._qa_with_huggingface(text, question)
+            elif method == "auto":
+                if self.openai_available:
+                    return self._qa_with_openai(text, question)
+                elif self.huggingface_available:
+                    return self._qa_with_huggingface(text, question)
+                else:
+                    return self._qa_with_local_model(text, question)
             else:
                 return self._qa_with_local_model(text, question)
                 
@@ -328,6 +346,46 @@ class GenAIDocumentAnalyzer:
         
         # Simple keyword-based answer extraction as fallback
         return self._simple_qa_fallback(text, question)
+    
+    def _qa_with_huggingface(self, text: str, question: str) -> Dict:
+        """Answer question using Hugging Face free API"""
+        try:
+            import requests
+            
+            # Use free Hugging Face inference API
+            API_URL = "https://api-inference.huggingface.co/models/deepset/roberta-base-squad2"
+            headers = {"Authorization": f"Bearer {self.huggingface_api_key}"}
+            
+            # Truncate text if too long
+            max_length = 500
+            words = text.split()
+            if len(words) > max_length:
+                text = ' '.join(words[:max_length])
+            
+            payload = {
+                "inputs": {
+                    "question": question,
+                    "context": text
+                }
+            }
+            
+            response = requests.post(API_URL, headers=headers, json=payload)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if 'answer' in result:
+                    return {
+                        'answer': result['answer'],
+                        'confidence': round(result.get('score', 0.5), 3),
+                        'method': 'huggingface_free'
+                    }
+            
+            # If API fails, fall back to local method
+            return self._simple_qa_fallback(text, question)
+            
+        except Exception as e:
+            logger.error(f"Hugging Face QA error: {str(e)}")
+            return self._simple_qa_fallback(text, question)
     
     def _simple_qa_fallback(self, text: str, question: str) -> Dict:
         """Simple keyword-based Q&A fallback"""

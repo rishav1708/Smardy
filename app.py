@@ -507,8 +507,8 @@ def qa_assistant_tab(genai_analyzer):
     with col2:
         method = st.selectbox(
             "Answer Method:",
-            ["auto", "openai", "local"],
-            help="auto = use best available method"
+            ["auto", "openai", "huggingface", "local"],
+            help="auto = use best available method, huggingface = free AI"
         )
     
     if question and st.button("🤔 Get Answer", type="primary"):
