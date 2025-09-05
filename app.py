@@ -28,6 +28,9 @@ from utils.document_processor import DocumentProcessor
 from models.ml_analyzer import MLDocumentAnalyzer
 from models.genai_analyzer import GenAIDocumentAnalyzer
 
+# Version identifier for deployment tracking
+APP_VERSION = "v2.1-fixed-horizontal-bar"
+
 # Configure page
 st.set_page_config(
     page_title="Smart Document Analyzer",
@@ -157,10 +160,10 @@ def main():
         document_library_tab()
     
     # Footer
-    st.markdown("""
+    st.markdown(f"""
     <div class="footer">
         <hr>
-        <p><strong>Smart Document Analyzer</strong> | Developed by Rishav Kant | Birla Institute of Technology, Mesra</p>
+        <p><strong>Smart Document Analyzer {APP_VERSION}</strong> | Developed by Rishav Kant | Birla Institute of Technology, Mesra</p>
         <p>Combining Traditional ML with Modern GenAI for Comprehensive Document Analysis</p>
     </div>
     """, unsafe_allow_html=True)
@@ -304,7 +307,7 @@ def display_analysis_summary(results):
     if 'keywords' in results:
         st.markdown("### 🔑 Top Keywords")
         keywords_df = pd.DataFrame(results['keywords'], columns=['Keyword', 'Score'])
-        st.dataframe(keywords_df.head(10), use_container_width=True)
+        st.dataframe(keywords_df.head(10), width='stretch')  # Fixed: Updated from use_container_width
 
 def analysis_dashboard_tab():
     """Analysis dashboard with visualizations"""
@@ -377,7 +380,7 @@ def analysis_dashboard_tab():
             orientation='h'
         )
         fig_keywords.update_layout(yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig_keywords, use_container_width=True)
+        st.plotly_chart(fig_keywords, width='stretch')  # Fixed: Updated from use_container_width
     
     # Word cloud data
     if 'word_cloud_data' in results:
