@@ -8,10 +8,8 @@ import json
 import logging
 import requests
 from typing import Dict, List, Optional, Union
-from transformers import pipeline, AutoTokenizer, AutoModel
-import torch
-from sentence_transformers import SentenceTransformer
-import numpy as np
+import re
+from collections import Counter
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -78,62 +76,13 @@ class GenAIDocumentAnalyzer:
         return {"error": "Max retries exceeded"}
     
     def _init_local_models(self):
-        """Initialize local transformer models with graceful fallbacks"""
-        # Initialize models as None first
+        """Initialize models - using only Hugging Face API for Streamlit Cloud compatibility"""
+        # Set all local models to None - we'll use Hugging Face API instead
         self.summarizer = None
         self.qa_model = None
         self.sentence_model = None
         
-        try:
-            # Try to initialize summarization model
-            logger.info("Attempting to load summarization model...")
-            self.summarizer = pipeline(
-                "summarization",
-                model="facebook/bart-large-cnn",
-                tokenizer="facebook/bart-large-cnn"
-            )
-            logger.info("✅ Summarization model loaded successfully")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to load summarization model: {str(e)}")
-            self.summarizer = None
-        
-        try:
-            # Try to initialize Q&A model with a lighter alternative first
-            logger.info("Attempting to load Q&A model...")
-            # Use a smaller, faster model for Streamlit Cloud
-            self.qa_model = pipeline(
-                "question-answering",
-                model="distilbert-base-uncased-distilled-squad"
-            )
-            logger.info("✅ Q&A model loaded successfully")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to load Q&A model: {str(e)}")
-            try:
-                # Try an even lighter model
-                logger.info("Trying lighter Q&A model...")
-                self.qa_model = pipeline(
-                    "question-answering",
-                    model="deepset/minilm-uncased-squad2"
-                )
-                logger.info("✅ Light Q&A model loaded successfully")
-            except Exception as e2:
-                logger.error(f"❌ All Q&A models failed to load: {str(e2)}")
-                self.qa_model = None
-        
-        try:
-            # Try to initialize sentence transformer
-            logger.info("Attempting to load sentence transformer...")
-            self.sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("✅ Sentence transformer loaded successfully")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to load sentence transformer: {str(e)}")
-            self.sentence_model = None
-        
-        # Log final status
-        models_loaded = sum([self.summarizer is not None, 
-                           self.qa_model is not None, 
-                           self.sentence_model is not None])
-        logger.info(f"Local model initialization complete: {models_loaded}/3 models loaded successfully")
+        logger.info("🌐 Using Hugging Face API for all ML operations (Streamlit Cloud optimized)")
     
     def generate_summary(self, text: str, method: str = "auto", 
                         max_length: int = 150, min_length: int = 50) -> Dict:
@@ -222,16 +171,15 @@ class GenAIDocumentAnalyzer:
             raise e
     
     def _summarize_with_local_model(self, text: str, max_length: int, min_length: int) -> Dict:
-        """Generate summary using local BART model with fallback"""
-        if not self.summarizer:
-            # Use extractive summary as fallback
-            logger.info("Using extractive summary fallback")
-            return {
-                'summary': self._extractive_summary(text, 3),
-                'method': 'extractive_fallback',
-                'word_count': len(self._extractive_summary(text, 3).split()),
-                'compression_ratio': round(len(text.split()) / len(self._extractive_summary(text, 3).split()), 2)
-            }
+        """Generate summary using extractive method (no heavy models needed)"""
+        logger.info("Using extractive summary method")
+        summary = self._extractive_summary(text, 3)
+        return {
+            'summary': summary,
+            'method': 'extractive_local',
+            'word_count': len(summary.split()),
+            'compression_ratio': round(len(text.split()) / len(summary.split()), 2) if summary else 1
+        }
         
         try:
             # Split text into chunks if too long
@@ -612,26 +560,25 @@ class GenAIDocumentAnalyzer:
     
     def compute_semantic_similarity(self, text1: str, text2: str) -> Dict:
         """
-        Compute semantic similarity between two texts using sentence embeddings
+        Compute basic text similarity using word overlap
         """
-        if not self.sentence_model:
-            return {'similarity': 0.0, 'error': 'Sentence transformer not available'}
-        
         try:
-            # Generate embeddings
-            embeddings = self.sentence_model.encode([text1, text2])
+            # Simple word-based similarity
+            words1 = set(re.findall(r'\b\w{3,}\b', text1.lower()))
+            words2 = set(re.findall(r'\b\w{3,}\b', text2.lower()))
             
-            # Compute cosine similarity
-            similarity = np.dot(embeddings[0], embeddings[1]) / (
-                np.linalg.norm(embeddings[0]) * np.linalg.norm(embeddings[1])
-            )
+            if not words1 or not words2:
+                return {'similarity': 0.0, 'interpretation': 'No content to compare'}
+            
+            # Jaccard similarity
+            intersection = len(words1.intersection(words2))
+            union = len(words1.union(words2))
+            similarity = intersection / union if union > 0 else 0.0
             
             similarity_percentage = similarity * 100
             
             # Interpret similarity
-            if similarity_percentage >= 80:
-                interpretation = "Very High"
-            elif similarity_percentage >= 60:
+            if similarity_percentage >= 60:
                 interpretation = "High"
             elif similarity_percentage >= 40:
                 interpretation = "Moderate"
@@ -641,7 +588,7 @@ class GenAIDocumentAnalyzer:
                 interpretation = "Very Low"
             
             return {
-                'similarity_score': round(float(similarity), 4),
+                'similarity_score': round(similarity, 4),
                 'similarity_percentage': round(similarity_percentage, 2),
                 'interpretation': interpretation
             }
