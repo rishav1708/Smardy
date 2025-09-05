@@ -352,7 +352,7 @@ def analysis_dashboard_tab():
         keywords_df = pd.DataFrame(results['keywords'], columns=['Keyword', 'Score'])
         keywords_df = keywords_df.head(15)
         
-        fig_keywords = px.horizontal_bar(
+        fig_keywords = px.bar(
             keywords_df,
             x='Score',
             y='Keyword',
@@ -517,7 +517,8 @@ def qa_assistant_tab():
         if doc_type in suggestions:
             for suggestion in suggestions[doc_type]:
                 if st.button(f"💬 {suggestion}", key=f"suggest_{suggestion}"):
-                    st.experimental_set_query_params(question=suggestion)
+                    # Auto-fill the question (user can copy manually)
+                    st.info(f"💬 Suggested question: {suggestion}")
 
 def document_library_tab():
     """Document library tab"""
@@ -550,7 +551,7 @@ def document_library_tab():
                 if st.button(f"Load for Analysis", key=f"load_{i}"):
                     st.session_state.current_analysis = doc
                     st.success("Document loaded!")
-                    st.experimental_rerun()
+                    st.rerun()
             
             # Document preview
             if st.button(f"Show Preview", key=f"preview_{i}"):
@@ -561,7 +562,7 @@ def document_library_tab():
         st.session_state.analyzed_documents = []
         st.session_state.current_analysis = None
         st.success("Library cleared!")
-        st.experimental_rerun()
+        st.rerun()
 
 if __name__ == "__main__":
     main()
