@@ -10,7 +10,7 @@
 [![ML](https://img.shields.io/badge/ML-Scikit--Learn-orange.svg)](https://scikit-learn.org)
 [![GenAI](https://img.shields.io/badge/GenAI-OpenAI%20%7C%20HuggingFace-purple.svg)](https://openai.com)
 
-## 🚀 Overview
+### 🚀 Overview
 
 Smart Document Analyzer is a cutting-edge document analysis platform that combines traditional Machine Learning techniques with modern Generative AI to provide comprehensive insights into text documents. This project showcases the integration of classical NLP methods with state-of-the-art language models to deliver a powerful, user-friendly document analysis tool.
 
