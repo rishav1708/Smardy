@@ -4,11 +4,13 @@
 
 *Built by Rishav Kant | Birla Institute of Technology, Mesra*
 
+**🔗 Live demo: https://smardy.streamlit.app**
+
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.25.0-red.svg)](https://streamlit.io)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![ML](https://img.shields.io/badge/ML-Scikit--Learn-orange.svg)](https://scikit-learn.org)
-[![GenAI](https://img.shields.io/badge/GenAI-OpenAI%20%7C%20HuggingFace-purple.svg)](https://openai.com)
+[![GenAI](https://img.shields.io/badge/GenAI-Gemini%20RAG-purple.svg)](https://ai.google.dev)
 
 ### 🚀 Overview
 

@@ -128,7 +128,7 @@ def main():
         st.markdown("""
         - **Document Processing**: PDF, DOCX, TXT, CSV
         - **Traditional ML**: Classification, Clustering, NLP
-        - **GenAI Integration**: Hugging Face powered insights
+        - **GenAI Integration**: RAG Q&A and summaries (Gemini)
         - **Sentiment Analysis**: Advanced emotion detection
         - **Q&A System**: Ask questions about your documents
         - **Visualization**: Interactive charts and word clouds
@@ -137,11 +137,10 @@ def main():
         st.markdown("### 📊 Model Status")
         try:
             status = genai_analyzer.check_api_status()
-            st.write("🤖 Local ML Models: ✅" if all(status['local_models'].values()) else "🤖 Local ML Models: ⚠️")
-            st.write("🤗 Hugging Face API: ✅" if status['huggingface_available'] else "🤗 Hugging Face API: ❌")
+            st.write("🧠 Local NLP (NLTK + scikit-learn): ✅")
+            st.write("✨ Gemini LLM: ✅" if status.get('gemini_available') else "✨ Gemini LLM: off (local retrieval mode)")
         except Exception as e:
-            st.write("🤖 Local ML Models: ⚠️")
-            st.write("🤗 Hugging Face API: ⚠️")
+            st.write("🧠 Local NLP (NLTK + scikit-learn): ✅")
             st.caption("Status check temporarily unavailable")
     
     # Main tabs
@@ -471,7 +470,7 @@ def qa_assistant_tab():
         answer_method = st.selectbox(
             "Answer Method:",
             ["auto", "local"],
-            help="Auto: Try Hugging Face then local models | Local: Use only local models"
+            help="Auto: retrieve relevant passages, then answer with Gemini if configured | Local: return the best matching passage"
         )
     
     if question and st.button("🤔 Get Answer", type="primary"):
