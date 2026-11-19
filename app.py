@@ -30,7 +30,7 @@ from models.genai_analyzer import GenAIDocumentAnalyzer
 
 # Version identifier for deployment tracking  
 # DEPLOYMENT MARKER: 2025-09-05-02:46 - CACHE BUST FORCE DEPLOY
-APP_VERSION = "v2.2-FORCED-DEPLOY-CACHE-BUST"
+APP_VERSION = "v2.2"
 
 # Configure page
 st.set_page_config(
@@ -117,13 +117,12 @@ def main():
     """Main application function"""
     
     # Header  
-    st.markdown('<h1 class="main-header">📄 Smart Document Analyzer ✨ FIXED</h1>', unsafe_allow_html=True)
-    st.markdown("**Powered by ML & GenAI | Built by Rishav Kant, BIT Mesra | 🔥 Cache-Bust Deploy v2.2**")
+    st.markdown('<h1 class="main-header">📄 Smart Document Analyzer</h1>', unsafe_allow_html=True)
+    st.markdown("**Powered by ML & GenAI | Built by Rishav Kant, BIT Mesra**")
     
     # Sidebar
     with st.sidebar:
-        st.image("https://via.placeholder.com/300x150/1f77b4/white?text=Smart+Document+Analyzer", 
-                caption="ML + GenAI Document Analysis")
+        st.markdown("## 📄 Smardy\nML + GenAI Document Analysis")
         
         st.markdown("### 🚀 Features")
         st.markdown("""
