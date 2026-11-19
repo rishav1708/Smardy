@@ -63,6 +63,10 @@ safe_nltk_download('corpora/wordnet')
 safe_nltk_download('taggers/averaged_perceptron_tagger')
 safe_nltk_download('chunkers/maxent_ne_chunker')
 safe_nltk_download('corpora/words')
+# Newer NLTK (3.9+) loads these renamed resources instead
+safe_nltk_download('tokenizers/punkt_tab')
+safe_nltk_download('taggers/averaged_perceptron_tagger_eng')
+safe_nltk_download('chunkers/maxent_ne_chunker_tab')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -402,7 +406,7 @@ class MLDocumentAnalyzer:
                         if word not in common_words and len(word) > 2}
             
             # Get top 50 words
-            top_words = dict(word_freq.most_common(50))
+            top_words = dict(sorted(word_freq.items(), key=lambda kv: kv[1], reverse=True)[:50])
             
             return {
                 'word_frequencies': top_words,
