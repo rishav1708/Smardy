@@ -46,8 +46,12 @@ class GenAIDocumentAnalyzer:
         self.hf_api_key = os.getenv('HUGGING_FACE_API_KEY')
         self.hf_api_url = "https://api-inference.huggingface.co/models/"
         
-        # Hugging Face is available even without API key (rate limited)
-        self.huggingface_available = True
+        # The keyless HF inference endpoint was retired, so only use HF with a key
+        self.huggingface_available = bool(self.hf_api_key)
+        # Optional Gemini (free tier) for grounded Q&A and summaries.
+        # On Streamlit Cloud, add GEMINI_API_KEY under App settings -> Secrets.
+        self.gemini_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+        self.gemini_model = os.getenv('SMARDY_LLM', 'gemini-3.5-flash-lite')
         if self.hf_api_key:
             logger.info("✅ Hugging Face API key found")
         else:
@@ -117,6 +121,13 @@ class GenAIDocumentAnalyzer:
                 'error': 'Text too short for summarization'
             }
         
+        if method == "auto" and self.gemini_key:
+            try:
+                return {'summary': self._gemini(f"Summarize this document in 4-5 sentences:\n\n{text[:15000]}"),
+                        'method': f'gemini_{self.gemini_model}'}
+            except Exception as e:
+                logger.warning(f"Gemini summary failed, using local: {e}")
+
         # Choose method
         if method == "auto":
             method = "huggingface" if self.huggingface_available else "local"
@@ -270,7 +281,51 @@ class GenAIDocumentAnalyzer:
         except Exception:
             return text[:500] + '...' if len(text) > 500 else text
     
+    def _gemini(self, prompt: str) -> str:
+        r = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self.gemini_model}:generateContent",
+            headers={"x-goog-api-key": self.gemini_key},
+            json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
+        r.raise_for_status()
+        return r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+    @staticmethod
+    def _top_chunks(text: str, question: str, k: int = 4, size: int = 80):
+        """TF-IDF retrieval over overlapping word windows. Returns [(score, chunk)] best first."""
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+        words = re.sub(r'\s+', ' ', text).split()
+        chunks = [' '.join(words[i:i + size]) for i in range(0, max(len(words) - size // 2, 1), size // 2)]
+        vec = TfidfVectorizer(stop_words='english').fit(chunks + [question])
+        sims = cosine_similarity(vec.transform([question]), vec.transform(chunks))[0]
+        order = sims.argsort()[::-1][:k]
+        return [(float(sims[i]), chunks[i]) for i in order]
+
     def answer_question(self, text: str, question: str, method: str = "auto") -> Dict:
+        """Retrieve the most relevant passages, then answer with Gemini if configured,
+        else return the best passage (extractive)."""
+        try:
+            top = self._top_chunks(text, question)
+        except ValueError:  # empty vocabulary (e.g. question is all stop words)
+            top = []
+        if not top or top[0][0] == 0:
+            return {'answer': "I couldn't find anything in the document about that. Try using words that appear in it.",
+                    'confidence': 0.0, 'method': 'retrieval'}
+        if self.gemini_key and method != "local":
+            try:
+                context = "\n---\n".join(c for _, c in top)
+                answer = self._gemini(
+                    "Answer the question using only the document excerpts below. "
+                    "If they don't contain the answer, say so. Be concise.\n\n"
+                    f"Excerpts:\n{context}\n\nQuestion: {question}")
+                return {'answer': answer, 'confidence': round(min(0.5 + top[0][0], 0.95), 3),
+                        'method': f'rag_{self.gemini_model}'}
+            except Exception as e:
+                logger.warning(f"Gemini Q&A failed, using extractive answer: {e}")
+        score, best = top[0]
+        return {'answer': best, 'confidence': round(min(score, 0.9), 3), 'method': 'tfidf_retrieval'}
+
+    def _old_answer_question(self, text: str, question: str, method: str = "auto") -> Dict:
         """
         Answer questions about the document with robust fallback handling
         """
@@ -673,6 +728,7 @@ class GenAIDocumentAnalyzer:
         try:
             status = {
                 'huggingface_available': self.huggingface_available,
+                'gemini_available': bool(self.gemini_key),
                 'local_models': {
                     'summarizer': self.summarizer is not None,
                     'qa_model': self.qa_model is not None,
